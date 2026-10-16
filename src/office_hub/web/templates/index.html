@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ settings.app_name }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
+</head>
+<body>
+<main class="shell">
+    <header class="hero">
+        <div>
+            <p class="eyebrow">LOCAL AUTOMATION CONTROL ROOM</p>
+            <h1>{{ settings.app_name }}</h1>
+            <p class="muted">Durable, reviewable jobs for your Windows office workstation.</p>
+        </div>
+        <div class="health-pill" id="health-pill"><span class="dot"></span> Checking engine…</div>
+    </header>
+
+    <section class="summary-grid">
+        <article class="card summary-card">
+            <span class="label">Runtime</span>
+            <strong>{{ settings.environment|title }}</strong>
+            <small>Bound to {{ settings.host }}:{{ settings.port }}</small>
+        </article>
+        <article class="card summary-card">
+            <span class="label">Worker</span>
+            <strong>{{ "Enabled" if settings.enable_worker else "Disabled" }}</strong>
+            <small>One durable local worker</small>
+        </article>
+        <article class="card summary-card">
+            <span class="label">External actions</span>
+            <strong>{{ "Enabled" if settings.allow_external_actions else "Dry-run only" }}</strong>
+            <small>Fail-closed by default</small>
+        </article>
+        <article class="card summary-card">
+            <span class="label">Scheduler</span>
+            <strong>{{ "Enabled" if settings.enable_scheduler else "Disabled" }}</strong>
+            <small>{{ settings.scheduler_timezone }}</small>
+        </article>
+    </section>
+
+    <section class="content-grid">
+        <article class="card composer">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">RUN A WORKFLOW</p>
+                    <h2>Queue a job</h2>
+                </div>
+                <span class="badge">Safe by default</span>
+            </div>
+            <form id="job-form">
+                <label for="task-name">Workflow</label>
+                <select id="task-name" name="task_name">
+                    {% for task in tasks %}
+                    <option value="{{ task.name }}">{{ task.display_name }}</option>
+                    {% endfor %}
+                </select>
+
+                <div id="whatsapp-fields" class="task-fields">
+                    <label for="billing-folder">Folder override <span>(optional)</span></label>
+                    <input id="billing-folder" type="text" placeholder="Uses configured billing folder">
+                    <label for="target-date">PDF modified date</label>
+                    <input id="target-date" type="date">
+                </div>
+
+                <div id="busy-fields" class="task-fields hidden">
+                    <label for="busy-report-type">Report</label>
+                    <select id="busy-report-type">
+                        <option value="profit_loss">Profit &amp; Loss</option>
+                        <option value="balance_sheet">Balance Sheet</option>
+                    </select>
+                    <div class="two-col">
+                        <div>
+                            <label for="start-date">Start date</label>
+                            <input id="start-date" type="date">
+                        </div>
+                        <div>
+                            <label for="end-date">End date</label>
+                            <input id="end-date" type="date">
+                        </div>
+                    </div>
+                    <label for="busy-mode">Export mode</label>
+                    <select id="busy-mode">
+                        <option value="manual_import">Manual BUSY export (.xlsx)</option>
+                        <option value="ui">Guarded BUSY desktop UI</option>
+                    </select>
+                    <label for="busy-input-file">Inbox workbook path <span>(optional until BUSY export is ready)</span></label>
+                    <input id="busy-input-file" type="text" placeholder="Path inside the configured BUSY inbox">
+                </div>
+
+                <div id="sheets-fields" class="task-fields hidden">
+                    <label for="sheet-id">Sheet ID <span>(optional if configured)</span></label>
+                    <input id="sheet-id" type="text" placeholder="Configured service-account sheet">
+                    <label for="row-count">Rows to sync (plan only)</label>
+                    <input id="row-count" type="number" min="0" value="0">
+                </div>
+
+                <label class="checkbox-row">
+                    <input id="dry-run" type="checkbox" checked>
+                    <span><strong>Dry run</strong><small>Plan and inspect without external side effects.</small></span>
+                </label>
+                <button type="submit" class="primary-button">Queue workflow <span>→</span></button>
+                <p id="form-message" class="form-message" role="status"></p>
+            </form>
+        </article>
+
+        <article class="card jobs-card">
+            <div class="section-heading">
+                <div>
+                    <p class="eyebrow">EXECUTION HISTORY</p>
+                    <h2>Recent jobs</h2>
+                </div>
+                <button id="refresh-jobs" class="icon-button" title="Refresh jobs">↻</button>
+            </div>
+            <div id="jobs-list" class="jobs-list">
+                {% for job in jobs %}
+                <div class="job-row" data-job-id="{{ job.id }}">
+                    <div class="job-main">
+                        <strong>{{ job.task_name|replace('_', ' ')|title }}</strong>
+                        <small>{{ job.created_at }}{% if job.dry_run %} · dry run{% endif %}</small>
+                    </div>
+                    <span class="status status-{{ job.status }}">{{ job.status }}</span>
+                </div>
+                {% else %}
+                <div class="empty-state">No jobs yet. Start with a dry run.</div>
+                {% endfor %}
+            </div>
+        </article>
+    </section>
+
+    <footer>
+        <span>Runtime data: {{ settings.data_dir }}</span>
+        <span>Billing folder: {{ settings.billing_folder }}</span>
+    </footer>
+</main>
+<script src="{{ url_for('static', path='app.js') }}"></script>
+</body>
+</html>
