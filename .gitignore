@@ -1,39 +1,26 @@
 # Python
 __pycache__/
 *.py[cod]
-*.pyd
-.Python
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-
-# Environments and packaging
-.venv/
-venv/
-env/
-*.egg-info/
-dist/
-build/
-
-# Local configuration and secrets
-.env
-.env.*
-!.env.example
-config.json
-*.json.secret
-
-# Runtime data (the default is outside the repository, but keep this safe)
+backend/.venv/
+backend/.env
+backend/data/
+backend/.pytest_cache/
+backend/.mypy_cache/
+backend/.ruff_cache/
 data/
-*.sqlite3
-*.db
-logs/
-outputs/
 
-# IDE and OS files
-.idea/
-.vscode/
-*.swp
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+whatsapp-bridge/node_modules/
+whatsapp-bridge/runtime/
+whatsapp-bridge/tokens/
+whatsapp-bridge/.wwebjs_auth/
+whatsapp-bridge/.wwebjs_cache/
+whatsapp-bridge/.env
+
+# Local tooling
+.DS_Store
 Thumbs.db
-Desktop.ini
+*.log

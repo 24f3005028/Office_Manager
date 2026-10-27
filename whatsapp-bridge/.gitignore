@@ -1,0 +1,10 @@
+node_modules/
+runtime/
+.env
+.env.*
+!.env.example
+tokens/
+.wwebjs_auth/
+.wwebjs_cache/
+dist/
+npm-debug.log*
