@@ -1,4 +1,6 @@
 import type {
+  BusyLedgerImportResponse,
+  BusyLedgerStatus,
   Contact,
   CreateSendJobRequest,
   DocumentCategory,
@@ -111,6 +113,20 @@ export const api = {
     return URL.createObjectURL(blob);
   },
   getSettings: () => request<WorkspaceSettings>("/api/settings"),
+  getBusyLedgerStatus: () => request<BusyLedgerStatus>("/api/busy-ledger/status"),
+  importBusyLedger: (
+    file?: File | null,
+    options?: { category?: DocumentCategory; dryRun?: boolean },
+  ) => {
+    const body = new FormData();
+    if (file) body.append("file", file);
+    if (options?.category) body.append("category", options.category);
+    body.append("dry_run", String(Boolean(options?.dryRun)));
+    return request<BusyLedgerImportResponse>("/api/busy-ledger/import", {
+      method: "POST",
+      body,
+    });
+  },
   updateDocumentRoots: (documentRoots: Record<DocumentCategory, string[]>) =>
     request<WorkspaceSettings>("/api/settings/document-roots", {
       method: "PUT",

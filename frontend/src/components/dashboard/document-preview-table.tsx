@@ -1,5 +1,12 @@
 import type { DocumentRecord } from "@/lib/api/types";
-import { documentTypeLabel, formatBytes, formatDateLabel } from "@/lib/documents";
+import {
+  dateSourceLabel,
+  dateSourceTitle,
+  documentDateLabel,
+  documentDateValue,
+  documentTypeLabel,
+  formatBytes,
+} from "@/lib/documents";
 
 interface DocumentPreviewTableProps {
   documents: DocumentRecord[];
@@ -21,7 +28,10 @@ export function DocumentPreviewTable({
   return (
     <div className="table-wrap">
       <table className="document-table">
-        <caption className="sr-only">Documents ordered for preview and sending by document type and number</caption>
+        <caption className="sr-only">
+          Documents in send order: oldest accounting date first, then Bills folder 1 to 2,
+          Credit notes folder 1 to 2 and Debit notes folder 1 to 2
+        </caption>
         <thead>
           <tr>
             <th scope="col">#</th>
@@ -34,10 +44,17 @@ export function DocumentPreviewTable({
         <tbody>
           {documents.map((document, index) => {
             const previous = index > 0 ? documents[index - 1] : undefined;
-            const dateLabel = formatDateLabel(document.modified_at);
-            const startsGroup = dateLabel !== formatDateLabel(previous?.modified_at);
-            return (
-              <tr key={document.file_id} className={startsGroup ? "new-date-group" : undefined}>
+            const dateLabel = documentDateLabel(document);
+            const startsGroup =
+              previous !== undefined &&
+              documentDateValue(document) !== documentDateValue(previous);
+            const badgeClass =
+              document.date_source === "busy"
+                ? "busy"
+                : document.date_source === "pdf"
+                  ? "pdf"
+                  : "unverified";
+            return (              <tr key={document.file_id} className={startsGroup ? "new-date-group" : undefined}>
                 <td className="row-number">{String(index + 1).padStart(2, "0")}</td>
                 <td>
                   <div className="file-cell">
@@ -50,7 +67,15 @@ export function DocumentPreviewTable({
                 </td>
                 <td><span className="type-tag">{documentTypeLabel(document.category)}</span></td>
                 <td className="muted-cell">
-                  {dateLabel ? <span className="date-tag">{dateLabel}</span> : "—"}
+                  <div className="date-cell">
+                    {dateLabel ? <span className="date-tag">{dateLabel}</span> : "—"}
+                    <span
+                      className={`date-source-badge ${badgeClass}`}
+                      title={dateSourceTitle(document)}
+                    >
+                      {dateSourceLabel(document)}
+                    </span>
+                  </div>
                 </td>
                 <td className="muted-cell">{formatBytes(document.size_bytes)}</td>
               </tr>

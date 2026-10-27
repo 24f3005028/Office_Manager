@@ -1,5 +1,12 @@
 export type DocumentType = "bill" | "credit_note" | "debit_note";
 export type DocumentCategory = "bills" | "credit_notes" | "debit_notes";
+export type DocumentDateSource = "busy" | "pdf" | "file_fallback";
+export type DocumentMatchStatus =
+  | "matched"
+  | "unmatched"
+  | "ambiguous"
+  | "series_mismatch_warning"
+  | "pdf_extracted";
 
 export const DOCUMENT_CATEGORIES: Array<{
   value: DocumentCategory;
@@ -83,6 +90,56 @@ export interface DocumentRecord {
   relative_path?: string;
   size_bytes?: number;
   modified_at?: string;
+  root_index?: number;
+  effective_date?: string;
+  date_source?: DocumentDateSource;
+  match_status?: DocumentMatchStatus;
+  matched_voucher_no?: string | null;
+}
+
+export interface BusyLedgerSampleKey {
+  category: DocumentCategory;
+  raw_voucher_no: string;
+  canonical_series: string;
+  fy: string;
+  serial: number;
+  voucher_date: string;
+  party_name: string;
+}
+
+export interface BusyLedgerFileResult {
+  filename: string;
+  category: DocumentCategory | null;
+  detected_headers: Record<string, string>;
+  rows_found: number;
+  rows_imported: number;
+  sample_keys: BusyLedgerSampleKey[];
+  warnings: string[];
+  min_date: string | null;
+  max_date: string | null;
+  deleted: boolean;
+}
+
+export interface BusyLedgerImportResponse {
+  dry_run: boolean;
+  files: BusyLedgerFileResult[];
+  rows_found: number;
+  rows_imported: number;
+  warnings: string[];
+}
+
+export interface BusyLedgerCategoryStatus {
+  category: DocumentCategory;
+  total_vouchers: number;
+  min_date: string | null;
+  max_date: string | null;
+}
+
+export interface BusyLedgerStatus {
+  last_sync_at: string | null;
+  last_sync_filename: string | null;
+  total_vouchers: number;
+  categories: BusyLedgerCategoryStatus[];
 }
 
 export interface SendJobFile {

@@ -24,6 +24,20 @@ separator. The defaults are:
 `DATABASE_PATH` is relative to the process working directory unless an absolute path is
 provided. The application creates its SQLite parent directory automatically.
 
+Date and BUSY ledger settings:
+
+- `PDF_DATE_EXTRACTION` enables reading the voucher date printed on each PDF, default `true`.
+  Extraction results are cached in `pdf_date_index`; the first full scan reads every PDF and
+  subsequent scans only re-read new or changed files.
+- `BUSY_INBOX_DIR` is the app-owned drop folder for Excel exports, default
+  `data/busy_inbox`. The dashboard upload endpoint also saves there before parsing. Ledger
+  import is optional because PDF dates are automatic.
+- `BUSY_IGNORED_DIRECTORIES` is a `|`-separated list of folder names excluded from PDF
+  scanning, default `BusyWin|EInvoiceTemp|EWayBillTemp|SYSTEM|XMPPMessages`.
+- `BUSY_SERIES_ALIASES` maps filename/voucher series, default
+  `{"HSTL": "HSL", "HSL": "HSL", "HST": "HST", "CN": "CN", "DN": "DN"}`.
+- `BUSY_FINANCIAL_YEAR` limits matching to one financial year, default `26-27`.
+
 Importing `app.main` or calling `create_app()` does not read runtime settings, open SQLite,
 or create an HTTP client. Configuration, migrations, recovery, and the worker start inside
 the ASGI lifespan. The existing `uvicorn app.main:app` entry point is retained. Run one backend
@@ -55,6 +69,8 @@ The API is available under `/api`. Useful endpoints include:
 - `GET /api/whatsapp/status`, `/contacts`, and `/qr`
 - `POST /api/whatsapp/start` and `/reconnect`
 - `GET /api/settings`, `PUT /api/settings/document-roots`, and `POST /api/settings/pick-folder`
+- `POST /api/busy-ledger/import` (multipart: optional `file`, `category`, `dry_run`)
+- `GET /api/busy-ledger/status`
 
 Create a send job with a JSON body such as:
 
@@ -72,17 +88,56 @@ the bridge is called.
 
 ## Ordering and message sequence
 
-The document list/preview order is authoritative: **all bills, then all credit notes, then
-all debit notes**. Within each type, filenames use natural prefix/number ordering; configured
-root order breaks ties, followed by natural relative-path ordering. Modified timestamps are
-used for inclusive local-date filtering and date labels, never to reorder a job. Creating a
-job uses this same order even if `file_ids` arrive in a different order.
+The document list/preview order is authoritative. Documents are ordered by their resolved
+accounting date, oldest first. Within one date the order is **all bills from folder 1 then
+folder 2, then credit notes from folder 1 then folder 2, then debit notes from folder 1 then
+folder 2**. Filenames use natural prefix/number ordering, and natural relative-path ordering
+breaks any remaining ties. Creating a job uses this same order even if `file_ids` arrive in a
+different order; the browser never re-sorts.
 
 An optional intro is sent once per job; omitted, `null`, or `""` means no intro. Each contiguous
-run of a local modified date is preceded by its `DD.MM.YY` label. A sequence of dates A, B, A
-therefore gets three labels. PDFs have no repeated intro caption. Cancellation is checked
-after the intro, after the label, and before starting the PDF. A PDF already accepted by the
-bridge keeps its receipt if cancellation races with its send.
+date run is preceded by exactly one `DD.MM.YY` label. PDFs have no repeated intro caption.
+Cancellation is checked after the intro, after the label, and before starting the PDF. A PDF
+already accepted by the bridge keeps its receipt if cancellation races with its send.
+
+## PDF voucher dates
+
+The scanner's document pipeline is **scan → resolve dates → filter → sort**. When
+`PDF_DATE_EXTRACTION` is enabled, every PDF that was not matched by an imported BUSY ledger has
+its first-page text layer read for the printed voucher date. Bills use `Dated` / `Invoice Date`;
+credit notes use `Cr. Note Date`; debit notes use `Dr. Note Date`. The parsed date becomes
+`effective_date` with `date_source: "pdf"` and `match_status: "pdf_extracted"`, and drives
+filtering, preview order and the WhatsApp date label. No Excel export is required.
+
+Results are cached in the `pdf_date_index` SQLite table by file id plus size and modification
+time. A full first scan reads every PDF; subsequent scans only re-read new or changed files.
+`PDF_DATE_EXTRACTION=false` disables the PDF reader and leaves the optional BUSY ledger as the
+only upgraded date source. Only the PDF text layer is read; BUSY databases, XML files and
+e-invoice temp files are never opened.
+
+## BUSY ledger dates (optional)
+
+`POST /api/busy-ledger/import` accepts an uploaded `.xlsx`, `.xlsm` or `.xls` export, or parses
+every workbook already in `BUSY_INBOX_DIR` when no file is supplied. `dry_run=true` parses and
+reports without writing the index. The parser scans the first 25 rows for common BUSY header
+synonyms (date, voucher number, voucher type, party), supports native Excel dates, serial numbers
+and common `DD-MM-YYYY` / `DD.MM.YY` / `DD-Mon-YYYY` strings, skips summary and continuation
+rows, and deduplicates by `(category, raw voucher number, voucher date)`.
+
+Workbooks are ephemeral: the source is permanently deleted after parsing, including on failure,
+with three attempts and a short backoff for Windows file locks. Only normalized rows are stored
+in `busy_voucher_index`; `busy_sync_batches` records each successful import. The backend never
+opens BUSY `.bds`/`.mdb` databases, installation folders, XML files or e-invoice temp files.
+
+Voucher numbers are compared as `(canonical series, financial year, serial)` after series-alias
+normalization, never as raw strings. A single candidate supplies the BUSY date. With several
+candidates the matcher first narrows by series, then uses party-name token similarity to pick one.
+A matched ledger row takes priority over the PDF-printed date. Unmatched or ambiguous records
+still receive their printed PDF date when it can be read; only unreadable PDFs keep their file
+date with `date_source: "file_fallback"` and an amber **File Date (Unverified)** badge. A ledger
+row may back only one distinct PDF; a second PDF claiming the same row makes both ambiguous
+instead of silently reusing a date. `GET /api/busy-ledger/status` reports the last sync, indexed
+totals and per-category date ranges.
 
 ## Bridge contract and readiness
 
@@ -152,7 +207,7 @@ If saving an acknowledgment fails, the running worker retains it and retries SQL
 persistence without repeating the external operation. A crash before that receipt is saved
 still requires review. Additive, repeatable migrations preserve populated legacy job/file
 rows and backfill stable operation IDs; old receipts cannot be reconstructed. Previously
-persisted jobs retain their stored ordering; the type-first contract applies to new jobs.
+persisted jobs retain their stored ordering; the current date-first contract applies to new jobs.
 
 ## Checks
 

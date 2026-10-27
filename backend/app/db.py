@@ -58,6 +58,46 @@ CREATE TABLE IF NOT EXISTS workspace_settings (
     document_roots TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS busy_voucher_index (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL,
+    raw_voucher_no TEXT NOT NULL,
+    canonical_series TEXT NOT NULL,
+    fy TEXT NOT NULL,
+    serial INTEGER NOT NULL,
+    voucher_date TEXT NOT NULL,
+    party_name TEXT NOT NULL DEFAULT '',
+    normalized_party TEXT NOT NULL DEFAULT '',
+    imported_at TEXT NOT NULL,
+    UNIQUE(category, canonical_series, fy, serial, party_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_busy_voucher_lookup
+    ON busy_voucher_index(category, serial);
+CREATE INDEX IF NOT EXISTS idx_busy_voucher_fy_lookup
+    ON busy_voucher_index(category, fy, serial);
+CREATE INDEX IF NOT EXISTS idx_busy_voucher_date
+    ON busy_voucher_index(category, voucher_date);
+
+CREATE TABLE IF NOT EXISTS busy_sync_batches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,
+    imported_at TEXT NOT NULL,
+    row_count INTEGER NOT NULL,
+    min_date TEXT,
+    max_date TEXT,
+    status TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pdf_date_index (
+    file_id TEXT PRIMARY KEY,
+    file_path TEXT NOT NULL,
+    mtime_ns INTEGER NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    voucher_date TEXT,
+    checked_at TEXT NOT NULL
+);
 """
 
 

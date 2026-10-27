@@ -1,63 +1,98 @@
-import type { DocumentRecord, DocumentType } from "./api/types";
+import type { DocumentRecord } from "./api/types";
 
-const categoryOrder: Record<DocumentType, number> = {
-  bill: 0,
-  credit_note: 1,
-  debit_note: 2,
-};
+const dateOnlyPattern = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-function naturalParts(value: string): Array<string | number> {
-  return value
-    .toLocaleLowerCase()
-    .split(/(\d+)/)
-    .filter(Boolean)
-    .map((part) => (/^\d+$/.test(part) ? Number(part) : part));
+export interface DocumentDateGroup {
+  key: string;
+  label: string;
+  documents: DocumentRecord[];
 }
 
-function compareNatural(left: string, right: string): number {
-  const leftParts = naturalParts(left);
-  const rightParts = naturalParts(right);
-  for (let index = 0; index < Math.max(leftParts.length, rightParts.length); index += 1) {
-    const leftPart = leftParts[index];
-    const rightPart = rightParts[index];
-    if (leftPart === undefined) return -1;
-    if (rightPart === undefined) return 1;
-    if (leftPart === rightPart) continue;
-    if (typeof leftPart === "number" && typeof rightPart === "number") return leftPart - rightPart;
-    return String(leftPart).localeCompare(String(rightPart));
+/**
+ * Format an ISO timestamp or `YYYY-MM-DD` date as `DD.MM.YY`.
+ *
+ * Date-only values are formatted without constructing a `Date`, because
+ * `new Date("2026-10-25")` is parsed as UTC midnight and can move to the
+ * previous day in local time.
+ */
+export function formatDateLabel(value?: string | null): string | null {
+  if (!value) return null;
+  const dateOnly = dateOnlyPattern.exec(value);
+  if (dateOnly) {
+    return `${dateOnly[3]}.${dateOnly[2]}.${dateOnly[1].slice(-2)}`;
   }
-  return 0;
-}
-
-export function sortDocuments(documents: DocumentRecord[]): DocumentRecord[] {
-  return [...documents].sort((left, right) => {
-    // Sending is type-major: bills, credit notes, then debit notes. This is
-    // also the backend's durable send order, so preview and delivery agree.
-    const categoryComparison =
-      (categoryOrder[left.category as DocumentType] ?? 99) -
-      (categoryOrder[right.category as DocumentType] ?? 99);
-    if (categoryComparison !== 0) return categoryComparison;
-    const nameComparison = compareNatural(left.file_name, right.file_name);
-    if (nameComparison !== 0) return nameComparison;
-    const dateComparison = modifiedAtMs(left.modified_at) - modifiedAtMs(right.modified_at);
-    if (dateComparison !== 0) return dateComparison;
-    return compareNatural(left.relative_path ?? "", right.relative_path ?? "");
-  });
-}
-
-function modifiedAtMs(value?: string): number {
-  if (!value) return Number.MAX_SAFE_INTEGER;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
-}
-
-export function formatDateLabel(modifiedAt?: string): string | null {
-  if (!modifiedAt || !Number.isFinite(Date.parse(modifiedAt))) return null;
-  const value = new Date(modifiedAt);
-  const day = String(value.getDate()).padStart(2, "0");
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const year = String(value.getFullYear()).slice(-2);
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return null;
+  const parsed = new Date(timestamp);
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const year = String(parsed.getFullYear()).slice(-2);
   return `${day}.${month}.${year}`;
+}
+
+/** The date the backend used for ordering, filtering and WhatsApp labels. */
+export function documentDateValue(document: DocumentRecord): string | undefined {
+  return document.effective_date ?? document.modified_at;
+}
+
+export function documentDateLabel(document: DocumentRecord): string | null {
+  return formatDateLabel(documentDateValue(document));
+}
+
+export function isDateVerified(document: DocumentRecord): boolean {
+  return document.date_source === "busy" || document.date_source === "pdf";
+}
+
+export function dateSourceLabel(document: DocumentRecord): string {
+  if (document.date_source === "busy") return "BUSY";
+  if (document.date_source === "pdf") return "PDF";
+  return "File Date (Unverified)";
+}
+
+export function dateSourceTitle(document: DocumentRecord): string {
+  if (document.date_source === "busy") {
+    const voucher = document.matched_voucher_no
+      ? `BUSY voucher ${document.matched_voucher_no}`
+      : "The BUSY ledger";
+    const warning =
+      document.match_status === "series_mismatch_warning"
+        ? " Series differs from the filename; please verify."
+        : "";
+    return `${voucher} supplied this date.${warning}`;
+  }
+  if (document.date_source === "pdf") {
+    return "This is the voucher date printed on the PDF by BUSY.";
+  }
+  if (document.match_status === "ambiguous") {
+    return "Several BUSY vouchers share this number, so the file date is used until it is verified.";
+  }
+  if (document.match_status === "unmatched") {
+    return "No printed voucher date could be read from this PDF, so its file date is used. Check the PDF or sync the BUSY register.";
+  }
+  return "No verified voucher date was found, so this document's file date is used.";
+}
+
+/**
+ * Group documents by their effective date without re-sorting. The backend
+ * already returned them in authoritative send order.
+ */
+export function groupDocumentsByDate(documents: DocumentRecord[]): DocumentDateGroup[] {
+  const groups: DocumentDateGroup[] = [];
+  for (const document of documents) {
+    const key = documentDateValue(document) ?? "unknown";
+    const label = documentDateLabel(document) ?? "Unknown date";
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) {
+      last.documents.push(document);
+    } else {
+      groups.push({ key, label, documents: [document] });
+    }
+  }
+  return groups;
+}
+
+export function countUnverifiedDocuments(documents: DocumentRecord[]): number {
+  return documents.filter((document) => !isDateVerified(document)).length;
 }
 
 export function formatBytes(bytes?: number): string {

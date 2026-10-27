@@ -25,5 +25,11 @@ bun run build
 ```
 
 The page expects the API contract documented by the office dashboard backend: health and
-WhatsApp status/QR endpoints, document filtering, contacts, send jobs, polling, and job
-cancellation.
+WhatsApp status/QR endpoints, document filtering, contacts, send jobs, polling, job
+cancellation, and the optional BUSY ledger import/status endpoints.
+
+Voucher dates are read automatically from each PDF's printed date, so the dashboard works
+without importing an Excel ledger. Preview rows display a green **PDF** badge for a printed
+voucher date, a green **BUSY** badge when an optional ledger match overrides it, or an amber
+**File Date (Unverified)** badge when no printed date could be read. The **BUSY ledger** panel
+is optional and only cross-checks or replaces those dates.

@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { api, ApiError } from "@/lib/api/client";
 import { dateRangeFor, isValidDateRange, toDateInput, type DatePreset, type DateRange } from "@/lib/date";
-import { sortDocuments } from "@/lib/documents";
+import { countUnverifiedDocuments, groupDocumentsByDate } from "@/lib/documents";
 import type {
+  BusyLedgerStatus,
   Contact,
   DocumentRecord,
   DocumentType,
@@ -14,6 +15,7 @@ import type {
   WhatsappStatus,
   WorkspaceSettings,
 } from "@/lib/api/types";
+import { BusySyncPanel } from "./busy-sync-panel";
 import { ConnectionStatus } from "./connection-status";
 import { ContactPicker } from "./contact-picker";
 import { DateFilter } from "./date-filter";
@@ -59,6 +61,12 @@ export function DashboardPage() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [job, setJob] = useState<SendJob | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [busyStatus, setBusyStatus] = useState<BusyLedgerStatus | null>(null);
+  const [busyStatusLoading, setBusyStatusLoading] = useState(true);
+  const [busyImporting, setBusyImporting] = useState(false);
+  const [busyError, setBusyError] = useState<string | null>(null);
+  const [busyMessage, setBusyMessage] = useState<string | null>(null);
+  const [busyWarnings, setBusyWarnings] = useState<string[]>([]);
 
   const refreshConnection = useCallback(async () => {
     const results = await Promise.allSettled([api.getHealth(), api.getWhatsappStatus()]);
@@ -103,6 +111,22 @@ export function DashboardPage() {
       cancelled = true;
     };
   }, []);
+
+  const loadBusyStatus = useCallback(async () => {
+    setBusyStatusLoading(true);
+    try {
+      setBusyStatus(await api.getBusyLedgerStatus());
+      setBusyError(null);
+    } catch (error) {
+      setBusyError(errorMessage(error, "BUSY ledger status is unavailable."));
+    } finally {
+      setBusyStatusLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadBusyStatus();
+  }, [loadBusyStatus]);
 
   useEffect(() => {
     const shouldLoadQr = Boolean(status?.qr_available || status?.status === "qr");
@@ -220,9 +244,13 @@ export function DashboardPage() {
 
   const previewSummary = useMemo(() => {
     if (!hasPreviewed) return "Choose filters, then preview the matching documents.";
-    if (previewLoading) return "Scanning the selected folders…";
-    return `${documents.length} ${documents.length === 1 ? "document" : "documents"} in send order`;
-  }, [documents.length, hasPreviewed, previewLoading]);
+    if (previewLoading) return "Scanning the folders and reading printed voucher dates from PDFs…";
+    if (!documents.length) return "No documents match these filters.";
+    const dates = groupDocumentsByDate(documents).length;
+    return `${documents.length} ${documents.length === 1 ? "document" : "documents"} across ${dates} ${dates === 1 ? "date" : "dates"} in send order`;
+  }, [documents, hasPreviewed, previewLoading]);
+
+  const unverifiedCount = useMemo(() => countUnverifiedDocuments(documents), [documents]);
 
   function chooseDatePreset(preset: DatePreset) {
     setDatePreset(preset);
@@ -245,12 +273,40 @@ export function DashboardPage() {
         endDate: dateRange.endDate,
         documentTypes,
       });
-      setDocuments(sortDocuments(result));
+      // The backend already returns the authoritative date-by-date send order.
+      setDocuments(result);
     } catch (error) {
       setDocuments([]);
       setPreviewError(errorMessage(error, "Documents could not be loaded."));
     } finally {
       setPreviewLoading(false);
+    }
+  }
+
+  async function importBusyLedger(file: File) {
+    setBusyImporting(true);
+    setBusyError(null);
+    setBusyMessage(null);
+    setBusyWarnings([]);
+    try {
+      const result = await api.importBusyLedger(file);
+      const workbookCount = result.files.length;
+      const workbookLabel =
+        workbookCount === 1
+          ? result.files[0]?.filename ?? "the workbook"
+          : `${workbookCount} workbooks`;
+      setBusyMessage(
+        `Imported ${result.rows_imported.toLocaleString("en-IN")} ${
+          result.rows_imported === 1 ? "voucher" : "vouchers"
+        } from ${workbookLabel}. These ledger dates now take priority in the preview.`,
+      );
+      setBusyWarnings(result.warnings);
+      await loadBusyStatus();
+      if (hasPreviewed) await previewDocuments();
+    } catch (error) {
+      setBusyError(errorMessage(error, "The BUSY workbook could not be imported."));
+    } finally {
+      setBusyImporting(false);
     }
   }
 
@@ -322,6 +378,17 @@ export function DashboardPage() {
         onRetry={() => void refreshConnection()}
       />
 
+      <BusySyncPanel
+        status={busyStatus}
+        loading={busyStatusLoading}
+        importing={busyImporting}
+        error={busyError}
+        message={busyMessage}
+        warnings={busyWarnings}
+        onImport={(file) => void importBusyLedger(file)}
+        onRefresh={() => void loadBusyStatus()}
+      />
+
       <div className="workspace-grid">
         <aside className="control-column">
           <section className="panel filter-panel" aria-labelledby="filters-heading">
@@ -382,6 +449,21 @@ export function DashboardPage() {
             </div>
             {hasPreviewed && documents.length > 0 && <span className="count-badge">{documents.length} files</span>}
           </div>
+
+          {hasPreviewed && documents.length > 0 && (
+            <p className="order-note">
+              Oldest accounting date first. Within each date: Bills folder 1 → 2, CN folder 1 →
+              2, then DN folder 1 → 2. One date message is sent per date.
+            </p>
+          )}
+          {hasPreviewed && documents.length > 0 && unverifiedCount > 0 && (
+            <p className="unverified-notice">
+              <strong>{unverifiedCount}</strong>{" "}
+              {unverifiedCount === 1 ? "document uses a" : "documents use a"} file date because no
+              printed voucher date could be read from the PDF. Check that the PDF has a text layer,
+              or import the optional BUSY register above.
+            </p>
+          )}
 
           {!hasPreviewed ? (
             <div className="preview-placeholder">

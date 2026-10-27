@@ -10,10 +10,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from app.api.routes import busy_ledger as busy_ledger_routes
 from app.api.routes import documents, health, send_jobs, whatsapp
 from app.api.routes import settings as settings_routes
 from app.config import Settings
 from app.db import Database
+from app.domains.busy_ledger.repository import BusyLedgerRepository
+from app.domains.busy_ledger.service import BusyLedgerService
+from app.domains.documents.pdf_dates import PdfDateResolver
 from app.domains.documents.scanner import DocumentScanner
 from app.domains.documents.service import DocumentService
 from app.domains.send_jobs.repository import SendJobRepository
@@ -59,7 +63,20 @@ def create_app(
                 for category in ("bills", "credit_notes", "debit_notes")
             },
         )
-        document_service = DocumentService(DocumentScanner(workspace_settings.root_paths()))
+        busy_ledger_service = BusyLedgerService(
+            BusyLedgerRepository(database),
+            runtime_settings.busy_inbox_dir,
+            aliases=runtime_settings.series_alias_map,
+            financial_year=runtime_settings.busy_financial_year,
+        )
+        document_service = DocumentService(
+            DocumentScanner(
+                workspace_settings.root_paths(),
+                ignored_directory_names=runtime_settings.ignored_directory_names,
+            ),
+            busy_ledger_service,
+            PdfDateResolver(database) if runtime_settings.pdf_date_extraction else None,
+        )
         repository = SendJobRepository(database)
         runtime_bridge = bridge if bridge is not None else HttpWhatsAppBridge(
             runtime_settings.whatsapp_bridge_url,
@@ -78,6 +95,8 @@ def create_app(
         application.state.database = database
         application.state.workspace_settings = workspace_settings
         application.state.document_service = document_service
+        application.state.pdf_date_resolver = document_service.pdf_dates
+        application.state.busy_ledger_service = busy_ledger_service
         application.state.bridge = runtime_bridge
         application.state.bridge_readiness = readiness
         application.state.send_job_service = send_job_service
@@ -103,6 +122,7 @@ def create_app(
     application.add_middleware(RuntimeCORSMiddleware, application=application)
     application.include_router(health.router, prefix="/api")
     application.include_router(documents.router, prefix="/api")
+    application.include_router(busy_ledger_routes.router, prefix="/api")
     application.include_router(send_jobs.router, prefix="/api")
     application.include_router(settings_routes.router, prefix="/api")
     application.include_router(whatsapp.router, prefix="/api")

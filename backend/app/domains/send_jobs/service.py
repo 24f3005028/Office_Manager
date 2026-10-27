@@ -7,7 +7,10 @@ import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import date
 
-from app.domains.documents.models import natural_document_sort_key
+from app.domains.documents.models import (
+    natural_document_sort_key,
+    resolve_document_local_date,
+)
 from app.domains.documents.service import DocumentService
 from app.domains.send_jobs.models import ClaimedFile, JobFileInput, SendJobRecord
 from app.domains.send_jobs.repository import SendJobRepository
@@ -73,8 +76,9 @@ class SendJobService:
         if len(previews) != len(unique_ids):
             missing = next(file_id for file_id in unique_ids if file_id not in previews)
             raise ValueError(f"Document not found: {missing}")
-        # Preview and send order are authoritative and identical: type, natural
-        # prefix/number, then configured root order. Dates never reorder documents.
+        # Preview and send order are authoritative and identical: effective date
+        # (oldest first), then bills, credit notes and debit notes, then folder
+        # order and natural filename. One date label covers each contiguous run.
         inputs: list[JobFileInput] = []
         ordered = sorted(previews.values(), key=natural_document_sort_key)
         for position, document in enumerate(ordered):
@@ -88,7 +92,7 @@ class SendJobService:
                     path=validated_path,
                     file_name=document.file_name,
                     position=position,
-                    date_label=format_date_label(document.modified_at.astimezone().date()),
+                    date_label=format_date_label(resolve_document_local_date(document)),
                 )
             )
         return self.repository.create(

@@ -1,8 +1,8 @@
 # Office Document Dashboard
 
-Local Windows dashboard for finding bills, credit notes, and debit notes by their file modified
-date and sending the selected PDFs one at a time to a WhatsApp contact through a linked WhatsApp
-Web session.
+Local Windows dashboard for finding bills, credit notes, and debit notes by their printed
+accounting date and sending the selected PDFs one at a time to a WhatsApp contact through a
+linked WhatsApp Web session.
 
 ## Modules
 
@@ -60,11 +60,25 @@ multi-folder setup for bills, credit notes, and debit notes before allowing a se
 
 ## Date and ordering rules
 
-- A document is included when its Windows local last-modified date is inside the inclusive range.
-- PDFs are sent by document type in this order: bills, credit notes, debit notes.
-- Within a type, the filename prefix and numeric document number are sorted naturally, so `HST-2`
-  comes before `HST-10`. Configured root order breaks duplicate-number ties.
-- A date label is sent before each contiguous date run in that type-first order.
+- Voucher dates are read automatically from the text layer of each PDF (`Dated`,
+  `Cr. Note Date`, or `Dr. Note Date`). No Excel export is required. The date is cached by file
+  size and modification time, so the first scan reads every PDF and later scans only re-read new
+  or changed files.
+- Importing the BUSY Sales / Credit Note / Debit Note register from the optional **BUSY ledger**
+  panel overrides the printed date when a ledger match exists. The uploaded workbook is deleted
+  after parsing; only the minimal voucher/date/party index is kept in SQLite.
+- A document is included when its effective accounting date is inside the inclusive range.
+  Printed PDF dates show a green **PDF** badge, ledger-matched dates show a green **BUSY** badge,
+  and only unreadable/unsupported PDFs fall back to the Windows last-modified date with an amber
+  **File Date (Unverified)** badge.
+- Documents are ordered by accounting date, oldest first. Within each date the order is bills,
+  credit notes, then debit notes; configured folder 1 comes before folder 2, and filenames use
+  natural prefix/number ordering.
+- Exactly one `DD.MM.YY` message precedes each contiguous date run. The preview, send job and
+  WhatsApp messages all use this backend order; the browser never re-sorts documents.
+- BUSY installation folders (`BusyWin`, `EInvoiceTemp`, `EWayBillTemp`, `SYSTEM`,
+  `XMPPMessages`) are excluded from scanning. The backend never reads BUSY database, `.bds`,
+  `.mdb`, XML or e-invoice files. PDF date reading uses only the PDF text layer.
 
 ## Startup and WhatsApp readiness
 
