@@ -2,12 +2,13 @@
 
 Local Windows dashboard for finding bills, credit notes, and debit notes by their printed
 accounting date and sending the selected PDFs one at a time to a WhatsApp contact through a
-linked WhatsApp Web session.
+linked WhatsApp Web session. The same backend also runs the daily Pouncha sales sync from
+BUSY 21 into Google Sheets.
 
 ## Modules
 
 ```text
-backend/          FastAPI, SQLite job queue, document scanner
+backend/          FastAPI, SQLite job queue, document scanner, BUSY automation
 frontend/         Next.js dashboard UI
 whatsapp-bridge/  Node.js whatsapp-web.js session and send adapter
 ```
@@ -54,9 +55,10 @@ Copy-Item .env.example .env.local
 bun run dev
 ```
 
-Open <http://localhost:3000>. The home grid takes you to the WhatsApp bill sender. If the local
-workspace is not ready, the sender routes you through WhatsApp linking, live contact import, and
-multi-folder setup for bills, credit notes, and debit notes before allowing a send.
+Open <http://localhost:3000>. The home grid takes you to the WhatsApp bill sender and the
+Pouncha daily sync. If the local workspace is not ready, the sender routes you through WhatsApp
+linking, live contact import, and multi-folder setup for bills, credit notes, and debit notes
+before allowing a send.
 
 ## Date and ordering rules
 
@@ -81,29 +83,104 @@ multi-folder setup for bills, credit notes, and debit notes before allowing a se
   `XMPPMessages`) are excluded from scanning. The backend never reads BUSY database, `.bds`,
   `.mdb`, XML or e-invoice files. PDF date reading uses only the PDF text layer.
 
-## BUSY desktop automation (Phase 2)
+## BUSY desktop automation
 
-Phase 2 can drive an already-running BUSY 21 desktop to export the Sales Register. It is opt-in
-and refuses to run until the UI profile is calibrated against the installed BUSY build.
+The backend can drive an already-running BUSY 21 Rel 14.2 desktop to export the Account Ledger
+recipes used by the Pouncha sync: **Sales** (bills), **Sales Return** (credit notes), and
+**Purchase Return** (debit notes). It is opt-in and refuses to run until the UI profile is
+calibrated against the installed BUSY build.
 
 - Run the backend in the logged-in interactive Windows session; do not install it as a service.
 - Open BUSY 21 and log into `H.S. Traders` (the expected company is configurable).
-- Calibrate the UI without sending keys:
+- The shipped `backend/config/busy_ui_profile.json` is intentionally uncalibrated. The pipeline
+  refuses to run until `calibrated` is `true` and every required focus key or control selector
+  is filled in.
+- The recipes use the `BAGS` format, the `Sales` / `Sales Return` / `Purchase Return` account,
+  `DD-MM-YYYY` dates, and set **Transport Details** and **Bill References** to `Y`.
+- The export dialog is set to `Microsoft Excel`. The File Name is entered without `.xlsx`
+  because BUSY appends the extension; the pipeline polls both the extensionless name and the
+  `.xlsx` file. An "open file after export" prompt is answered with `N` / `{ESC}`, and Excel is
+  never opened.
+- Safety: the pipeline takes an exclusive lock, waits for the desktop to be idle, attaches to
+  the existing BUSY window, verifies the company title, exports to
+  `data/busy_automation/`, parses the workbook, and deletes the temporary file. It never closes
+  BUSY, never starts a second instance, and never kills `EXCEL.EXE`.
 
-  ```powershell
-  cd backend
-  .\.venv\Scripts\python.exe scripts/inspect_busy_ui.py --watch
-  .\.venv\Scripts\python.exe scripts/inspect_busy_ui.py --controls
-  ```
+### Account Ledger calibration checklist
 
-  Navigate to the Sales Register manually while `--watch` is running, then copy the observed
-  control selectors into `backend/config/busy_ui_profile.json`.
-- The pipeline acquires an exclusive lock, waits for the desktop to be idle, attaches to the
-  existing BUSY window, verifies the company title, exports to `data/busy_automation/`, imports
-  the workbook through the existing ledger parser, and deletes the temporary file. It never
-  closes BUSY, never starts a second instance, and never kills `EXCEL.EXE`.
-- Credit Note and Debit Note recipes are intentionally deferred until the Sales Register profile
-  has been calibrated live.
+1. Open BUSY 21 and log into `H.S. Traders`.
+2. Run the inspector without sending any keys:
+
+   ```powershell
+   cd backend
+   .\.venv\Scripts\python.exe scripts\inspect_busy_ui.py --watch
+   .\.venv\Scripts\python.exe scripts\inspect_busy_ui.py --controls
+   ```
+
+3. Navigate manually to **Account Ledger**, choose the **BAGS** format and the **Sales**
+   account, and note the focus keys, modal titles, and control selectors.
+4. Repeat for **Sales Return** and **Purchase Return**.
+5. Fill `navigation_keys`, `modal_keys`, the format/account/date selectors, and the export
+   `format_control` (Data Format = `Microsoft Excel`), `path_control`, and
+   `open_after_control` in `backend/config/busy_ui_profile.json`.
+6. Set `calibrated: true` for each recipe you verified.
+7. Validate one export without touching Google Sheets:
+
+   ```powershell
+   .\.venv\Scripts\python.exe scripts/test_pouncha_export.py
+   ```
+
+   Inspect the workbook copy under `data/pouncha_calibration/` and confirm the A:G rows before
+   enabling the scheduler.
+
+## Pouncha daily sales sync
+
+`/pouncha-sync` exports the BUSY Account Ledger Sales window and appends new sale bills to the
+**POUNCHA 26-27** Google Sheet. The tab has no header row: Row 1 is the first sale bill. The
+sync reads existing voucher numbers from Column B and appends new rows to Columns A:G only.
+Column H remarks such as `P` or `BILTY AA GYI` are never read or overwritten.
+
+Columns written per bill:
+
+```text
+A Date | B Vch/Bill No | C Account | D Transport | E Vehicle No | F Station | G Order No
+```
+
+### Google Sheets setup
+
+1. Create a Google Cloud project, enable the **Google Sheets API**, and create a service
+   account.
+2. Download the service-account JSON key to `backend/config/google_service_account.json`.
+   The file is git-ignored.
+3. Share the **POUNCHA 26-27** spreadsheet with the service account's `client_email` as
+   **Editor**.
+4. Copy the spreadsheet ID from its URL and set `POUNCHA_SPREADSHEET_ID` in
+   `backend/.env`.
+5. Leave `POUNCHA_SHEET_TAB_NAME=POUNCHA 26-27` unless the tab was renamed.
+
+### Schedule and catch-up
+
+- The scheduler runs every day at **00:00 IST** and exports the window from
+  `today - POUNCHA_SYNC_LOOKBACK_DAYS` through `today` (3 days by default).
+- On backend startup, and every `POUNCHA_CATCHUP_INTERVAL_MINUTES` (15 by default), it checks
+  whether a successful run has completed since midnight. If not, it runs the catch-up.
+- If BUSY 21 is closed, catch-up skips quietly and the page shows **Waiting for BUSY 21**;
+  no failed audit row is created.
+- Each run is stored in the `pouncha_sync_runs` table with its trigger, date window, counts,
+  status, warnings, and timestamps.
+
+### Manual sync and Excel upload
+
+- **Sync Now from BUSY** calls `POST /api/pouncha-sync/run`. The endpoint returns **202** with a
+  `run_id`; the page polls `/api/pouncha-sync/status` and `/api/pouncha-sync/runs/{run_id}`.
+- **Upload sales ledger Excel** accepts an `.xlsx`/`.xlsm` Account Ledger export, runs the same
+  parser, deduplication, local archive, and Sheets append, and returns the completed run
+  synchronously. The uploaded file is deleted after parsing.
+- Existing voucher numbers are deduplicated using the same canonical key as the BUSY ledger
+  parser. New rows are sorted by date, `HST` before `HST/L`, then serial.
+- When `POUNCHA_LOCAL_EXCEL_PATH` is set, a copy of every parsed sale row is also written to
+  that local workbook. Set it to an empty value to disable the archive.
+- The sync never writes to Sheets when there are no new rows and never modifies existing rows.
 
 ## Startup and WhatsApp readiness
 
@@ -119,7 +196,7 @@ instead of blindly resending a document and risking a duplicate.
 ## Checks
 
 ```powershell
-cd backend; python -m pytest; ruff check app tests; mypy app
+cd backend; python -m pytest; ruff check app tests scripts; mypy app scripts
 cd frontend; bun run typecheck; bun run lint; bun run build
 cd whatsapp-bridge; bun run typecheck; bun run test; bun run build
 ```

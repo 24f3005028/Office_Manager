@@ -138,6 +138,39 @@ class Settings(BaseSettings):
         default_factory=lambda: BACKEND_DIR / "data" / "busy_automation",
         validation_alias="BUSY_AUTOMATION_TEMP_DIR",
     )
+    pouncha_spreadsheet_id: str = Field(
+        default="", validation_alias="POUNCHA_SPREADSHEET_ID"
+    )
+    pouncha_sheet_tab_name: str = Field(
+        default="POUNCHA 26-27", validation_alias="POUNCHA_SHEET_TAB_NAME"
+    )
+    google_service_account_file: Path = Field(
+        default_factory=lambda: BACKEND_DIR / "config" / "google_service_account.json",
+        validation_alias="GOOGLE_SERVICE_ACCOUNT_FILE",
+    )
+    pouncha_local_excel_path: Path | None = Field(
+        default=None, validation_alias="POUNCHA_LOCAL_EXCEL_PATH"
+    )
+    pouncha_sync_enabled: bool = Field(
+        default=True, validation_alias="POUNCHA_SYNC_ENABLED"
+    )
+    pouncha_sync_lookback_days: int = Field(
+        default=3, ge=1, le=31, validation_alias="POUNCHA_SYNC_LOOKBACK_DAYS"
+    )
+    pouncha_catchup_interval_minutes: int = Field(
+        default=15, ge=1, le=1440, validation_alias="POUNCHA_CATCHUP_INTERVAL_MINUTES"
+    )
+    pouncha_timezone: str = Field(
+        default="Asia/Kolkata", validation_alias="POUNCHA_TIMEZONE"
+    )
+    pouncha_lock_path: Path = Field(
+        default_factory=lambda: BACKEND_DIR / "data" / "pouncha_sync.lock",
+        validation_alias="POUNCHA_LOCK_PATH",
+    )
+    pouncha_upload_dir: Path = Field(
+        default_factory=lambda: BACKEND_DIR / "data" / "pouncha_uploads",
+        validation_alias="POUNCHA_UPLOAD_DIR",
+    )
     whatsapp_bridge_url: str = Field(
         default="http://127.0.0.1:3001", validation_alias="WHATSAPP_BRIDGE_URL"
     )
@@ -170,6 +203,15 @@ class Settings(BaseSettings):
     def normalize_financial_year(cls, value: Any) -> str:
         text = str(value).strip()
         return text or "26-27"
+
+    @field_validator("pouncha_local_excel_path", mode="before")
+    @classmethod
+    def normalize_optional_path(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     def roots_for(self, category: str) -> tuple[Path, ...]:
         values = {

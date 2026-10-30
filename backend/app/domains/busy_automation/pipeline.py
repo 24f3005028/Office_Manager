@@ -3,35 +3,38 @@
 from __future__ import annotations
 
 import logging
-import time
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Protocol
-from uuid import uuid4
 
-from app.config import Settings
 from app.domains.busy_automation.errors import BusyAutomationError
 from app.domains.busy_automation.exporter import BusyExporter
-from app.domains.busy_automation.files import delete_file_with_retries
-from app.domains.busy_automation.lock import (
-    acquire_busy_lock,
-    wait_for_user_idle,
-)
-from app.domains.busy_automation.profile import BusyUiProfile, load_profile
+from app.domains.busy_automation.lock import wait_for_user_idle
 from app.domains.busy_automation.recipes import (
     BusyReportRecipe,
-    ReportRequest,
-    SalesRegisterRecipe,
+    recipe_for_category,
 )
-from app.domains.busy_automation.session import (
-    BusySession,
-    BusySessionProtocol,
+from app.domains.busy_automation.runner import (
+    BusyAutomationConfig,
+    BusyAutomationRequest,
+    BusyExportRunner,
+    IdleWaiter,
+    SessionFactory,
 )
 from app.domains.busy_ledger.service import BusyImportSummary
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "BusyAutomationConfig",
+    "BusyAutomationPipeline",
+    "BusyAutomationRequest",
+    "BusyAutomationResult",
+]
+
+SUPPORTED_CATEGORIES = frozenset({"bills", "credit_notes", "debit_notes"})
 
 
 class BusyLedgerImporter(Protocol):
@@ -42,48 +45,6 @@ class BusyLedgerImporter(Protocol):
         category: str | None = None,
         dry_run: bool = False,
     ) -> BusyImportSummary: ...
-
-
-class IdleWaiter(Protocol):
-    def __call__(
-        self, min_idle_seconds: float, *, timeout: float
-    ) -> None: ...
-
-
-SessionFactory = Callable[[BusyUiProfile], BusySessionProtocol]
-
-
-@dataclass(frozen=True, slots=True)
-class BusyAutomationConfig:
-    executable_path: Path
-    window_title_re: str
-    expected_company: str
-    timeout_seconds: float
-    idle_seconds: float
-    temp_dir: Path
-    lock_path: Path
-    profile: BusyUiProfile
-
-    @classmethod
-    def from_settings(cls, settings: Settings) -> BusyAutomationConfig:
-        return cls(
-            executable_path=settings.busy_executable_path,
-            window_title_re=settings.busy_window_title_re,
-            expected_company=settings.busy_expected_company_substring,
-            timeout_seconds=settings.busy_automation_timeout_seconds,
-            idle_seconds=settings.busy_min_user_idle_seconds,
-            temp_dir=settings.busy_automation_temp_dir,
-            lock_path=settings.busy_lock_path,
-            profile=load_profile(settings.busy_ui_profile_path),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class BusyAutomationRequest:
-    start_date: date
-    end_date: date
-    category: str = "bills"
-    series: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,96 +73,43 @@ class BusyAutomationPipeline:
         exporter: BusyExporter | None = None,
         recipe: BusyReportRecipe | None = None,
         idle_waiter: IdleWaiter = wait_for_user_idle,
-        now: Callable[[], datetime] = datetime.now,
+        runner: BusyExportRunner | None = None,
     ) -> None:
         self.config = config
         self.importer = importer
-        self._session_factory = session_factory or self._default_session_factory
-        self._exporter = exporter or BusyExporter(config.profile)
-        self._recipe = recipe or SalesRegisterRecipe(
-            config.profile.sales_register
+        self._recipe = recipe
+        self._runner = runner or BusyExportRunner(
+            config,
+            session_factory=session_factory,
+            exporter=exporter,
+            idle_waiter=idle_waiter,
         )
-        self._idle_waiter = idle_waiter
-        self._now = now
 
     def run(self, request: BusyAutomationRequest) -> BusyAutomationResult:
-        if request.category != "bills":
+        if request.category not in SUPPORTED_CATEGORIES:
             raise BusyAutomationError(
-                "Phase 2 automation supports the Sales Register (bills) only."
+                f"Unknown BUSY document category: {request.category}"
             )
-        if request.start_date > request.end_date:
-            raise ValueError("The report start date is after the end date.")
-
-        started = time.monotonic()
-        with acquire_busy_lock(
-            self.config.lock_path, self.config.timeout_seconds
-        ):
-            self._idle_waiter(
-                self.config.idle_seconds,
-                timeout=self.config.timeout_seconds,
-            )
-            target = self._new_target(request)
-            session: BusySessionProtocol | None = None
-            summary: BusyImportSummary | None = None
-            try:
-                session = self._session_factory(self.config.profile)
-                session.ensure_main_menu()
-                self._recipe.open_report(
-                    session,
-                    ReportRequest(
-                        start_date=request.start_date,
-                        end_date=request.end_date,
-                        series=request.series,
-                    ),
-                )
-                self._exporter.export(session, target)
-                summary = self.importer.import_workbooks(
-                    [target], category=request.category
-                )
-            finally:
-                if session is not None:
-                    try:
-                        session.close()
-                    except Exception as exc:
-                        logger.warning(
-                            "Could not release the BUSY session cleanly: %s", exc
-                        )
-                # The parser owns deletion. This is a missing_ok safety net
-                # for failures before parsing, or for a workbook Excel still
-                # holds open. Excel is never killed.
-                delete_file_with_retries(target)
-
-        assert summary is not None
+        recipe = self._recipe or recipe_for_category(
+            self.config.profile, request.category
+        )
+        summary, outcome = self._runner.run(
+            request,
+            recipe=recipe,
+            consumer=lambda path: self.importer.import_workbooks(
+                [path], category=request.category
+            ),
+            filename_prefix=f"busy_{request.category}",
+        )
         return BusyAutomationResult(
             category=request.category,
             start_date=request.start_date,
             end_date=request.end_date,
-            filename=target.name,
+            filename=outcome.exported_path.name,
             rows_found=summary.rows_found,
             rows_imported=summary.rows_imported,
             warnings=summary.warnings,
-            duration_sec=time.monotonic() - started,
-            deleted=not target.exists(),
+            duration_sec=outcome.duration_sec,
+            deleted=outcome.deleted,
             summary=summary,
-        )
-
-    def _new_target(self, request: BusyAutomationRequest) -> Path:
-        self.config.temp_dir.mkdir(parents=True, exist_ok=True)
-        stamp = self._now().strftime("%Y%m%d-%H%M%S")
-        unique = uuid4().hex[:8]
-        return self.config.temp_dir / (
-            "busy_sales_register_"
-            f"{request.start_date:%Y%m%d}_{request.end_date:%Y%m%d}_"
-            f"{stamp}_{unique}.xlsx"
-        )
-
-    def _default_session_factory(
-        self, profile: BusyUiProfile
-    ) -> BusySessionProtocol:
-        return BusySession.attach(
-            executable_path=self.config.executable_path,
-            title_re=self.config.window_title_re,
-            expected_company=self.config.expected_company,
-            profile=profile,
-            timeout=self.config.timeout_seconds,
         )

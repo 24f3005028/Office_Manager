@@ -27,6 +27,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <nav className="app-nav" aria-label="Primary navigation">
           <Link href="/">Home</Link>
           <Link href="/whatsapp-bill-sender">WhatsApp sender</Link>
+          <Link href="/pouncha-sync">Pouncha sync</Link>
           <Link href="/settings">Settings</Link>
         </nav>
         {children}

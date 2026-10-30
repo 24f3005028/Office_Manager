@@ -4,6 +4,8 @@ __pycache__/
 backend/.venv/
 backend/.env
 backend/data/
+backend/config/google_service_account.json
+backend/env/
 backend/.pytest_cache/
 backend/.mypy_cache/
 backend/.ruff_cache/

@@ -31,11 +31,16 @@ from app.domains.busy_automation.profile import (
     load_profile,
 )
 from app.domains.busy_automation.recipes import (
+    AccountLedgerSalesRecipe,
+    AccountLedgerSalesReturnRecipe,
+    PurchaseReturnRecipe,
     ReportRequest,
     SalesRegisterRecipe,
+    recipe_for_category,
 )
 from app.domains.busy_automation.session import (
     BusySession,
+    _connect,
     title_matches,
     verify_company_title,
 )
@@ -359,6 +364,37 @@ def test_title_matches_is_case_insensitive() -> None:
     assert not title_matches(r".*Export.*", "Sales Register")
 
 
+def test_connect_falls_back_to_a_window_handle(tmp_path: Path) -> None:
+    class FakeWindow:
+        handle = 4242
+
+    class FakeDesktop:
+        def __init__(self, *, backend: str) -> None:
+            assert backend == "win32"
+
+        def window(self, **kwargs: Any) -> FakeWindow:
+            assert "timeout" not in kwargs
+            assert kwargs["title_re"] == ".*BUSY.*"
+            return FakeWindow()
+
+    class FakeApplication:
+        def __init__(self, *, backend: str) -> None:
+            assert backend == "win32"
+
+        def connect(self, **kwargs: Any) -> str:
+            if "path" in kwargs:
+                raise RuntimeError("BUSY is running from another path")
+            assert kwargs["handle"] == 4242
+            assert kwargs["timeout"] == 1.0
+            return "attached"
+
+    result = _connect(
+        FakeApplication, FakeDesktop, tmp_path / "Busy21.exe", ".*BUSY.*", 1.0
+    )
+
+    assert result == "attached"
+
+
 def test_session_reset_cancels_an_exit_prompt() -> None:
     main = SessionWindow("BUSY - H.S. Traders", handle=1)
     exit_dialog = SessionWindow("Quit BUSY?", handle=2)
@@ -587,6 +623,7 @@ def test_exporter_export_flow_handles_the_open_file_prompt(
 ) -> None:
     target = tmp_path / "sales.xlsx"
     profile = BusyUiProfile()
+    profile.export.format_keys = "{TAB}"
     profile.export.file_stable_sec = 0.0
     profile.export.file_ready_timeout_sec = 1.0
     session = ExportFakeSession(target)
@@ -608,6 +645,7 @@ def test_exporter_export_flow_handles_the_open_file_prompt(
 def test_exporter_uses_an_explicit_path_control(tmp_path: Path) -> None:
     target = tmp_path / "sales.xlsx"
     profile = BusyUiProfile()
+    profile.export.format_keys = "{TAB}"
     profile.export.path_control = {"class_name": "Edit", "control_id": 7}
     profile.export.auto_detect_path_control = False
     profile.export.auto_detect_open_after_control = False
@@ -626,9 +664,21 @@ def test_exporter_uses_an_explicit_path_control(tmp_path: Path) -> None:
     ) in session.calls
 
 
+def test_exporter_refuses_an_uncalibrated_format(tmp_path: Path) -> None:
+    target = tmp_path / "sales.xlsx"
+    profile = BusyUiProfile()
+    profile.export.auto_detect_path_control = False
+    profile.export.auto_detect_open_after_control = False
+    session = ExportFakeSession(target)
+
+    with pytest.raises(BusyExportError, match="Data Format"):
+        BusyExporter(profile).export(session, target)
+
+
 def test_exporter_refuses_an_uncalibrated_path(tmp_path: Path) -> None:
     target = tmp_path / "sales.xlsx"
     profile = BusyUiProfile()
+    profile.export.format_keys = "{TAB}"
     profile.export.auto_detect_path_control = False
     profile.export.auto_detect_open_after_control = False
     session = ExportFakeSession(target)
@@ -690,6 +740,15 @@ def test_exporter_rejects_a_non_excel_file(tmp_path: Path) -> None:
         BusyExporter(BusyUiProfile())._validate_workbook(path)
 
 
+def test_exporter_accepts_an_extensionless_xlsx_export(tmp_path: Path) -> None:
+    path = tmp_path / "sales.xlsx"
+    make_workbook(path)
+    extensionless = path.with_suffix("")
+    path.rename(extensionless)
+
+    BusyExporter(BusyUiProfile())._validate_workbook(extensionless)
+
+
 def test_exporter_times_out_when_no_file_appears(tmp_path: Path) -> None:
     profile = BusyUiProfile()
     profile.export.file_ready_timeout_sec = 0.05
@@ -698,7 +757,7 @@ def test_exporter_times_out_when_no_file_appears(tmp_path: Path) -> None:
 
     with pytest.raises(BusyExportError, match="did not create"):
         exporter._wait_for_file(
-            FakeSession(), FakeDialog("Export"), tmp_path / "missing.xlsx"
+            FakeSession(), FakeDialog("Export"), (tmp_path / "missing.xlsx",)
         )
 
 
@@ -792,7 +851,31 @@ def test_pipeline_deletes_the_temp_file_when_importing_fails(
     assert not exporter.last_target.exists()
 
 
-def test_pipeline_rejects_non_sales_categories(tmp_path: Path) -> None:
+def test_recipe_for_category_routes_account_ledger_profiles() -> None:
+    profile = BusyUiProfile()
+
+    bills = recipe_for_category(profile, "bills")
+    credit_notes = recipe_for_category(profile, "credit_notes")
+    debit_notes = recipe_for_category(profile, "debit_notes")
+
+    assert isinstance(bills, AccountLedgerSalesRecipe)
+    assert isinstance(credit_notes, AccountLedgerSalesReturnRecipe)
+    assert isinstance(debit_notes, PurchaseReturnRecipe)
+    assert bills.profile.account_name == "Sales"
+    assert credit_notes.profile.account_name == "Sales Return"
+    assert debit_notes.profile.account_name == "Purchase Return"
+    assert bills.profile.format_name == "BAGS"
+    assert bills.profile.optional_fields_value is True
+    assert bills.profile.bill_references_value is True
+    assert bills.profile.calibrated is False
+
+    with pytest.raises(BusyAutomationError, match="Unknown"):
+        recipe_for_category(profile, "expenses")
+
+
+def test_pipeline_rejects_a_recipe_for_the_wrong_category(
+    tmp_path: Path,
+) -> None:
     pipeline = BusyAutomationPipeline(
         make_config(tmp_path),
         FakeImporter(),
@@ -802,7 +885,7 @@ def test_pipeline_rejects_non_sales_categories(tmp_path: Path) -> None:
         idle_waiter=lambda *args, **kwargs: None,
     )
 
-    with pytest.raises(BusyAutomationError, match="Sales Register"):
+    with pytest.raises(BusyAutomationError, match="cannot export"):
         pipeline.run(
             BusyAutomationRequest(
                 start_date=date(2026, 10, 1),
@@ -810,6 +893,36 @@ def test_pipeline_rejects_non_sales_categories(tmp_path: Path) -> None:
                 category="credit_notes",
             )
         )
+
+
+def test_pipeline_passes_the_requested_category_to_the_importer(
+    tmp_path: Path,
+) -> None:
+    class CategoryRecipe(FakeRecipe):
+        def __init__(self, category: str) -> None:
+            super().__init__()
+            self.category = category
+
+    importer = FakeImporter()
+    pipeline = BusyAutomationPipeline(
+        make_config(tmp_path),
+        importer,
+        session_factory=lambda profile: FakeSession(),
+        exporter=FakeExporter(),
+        recipe=CategoryRecipe("debit_notes"),
+        idle_waiter=lambda *args, **kwargs: None,
+    )
+
+    result = pipeline.run(
+        BusyAutomationRequest(
+            start_date=date(2026, 10, 1),
+            end_date=date(2026, 10, 31),
+            category="debit_notes",
+        )
+    )
+
+    assert result.category == "debit_notes"
+    assert importer.calls[0][1] == "debit_notes"
 
 
 def test_pipeline_rejects_a_reversed_date_range(tmp_path: Path) -> None:

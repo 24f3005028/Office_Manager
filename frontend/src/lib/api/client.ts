@@ -7,6 +7,9 @@ import type {
   DocumentRecord,
   DocumentType,
   HealthResponse,
+  PounchaSyncQueued,
+  PounchaSyncRun,
+  PounchaSyncStatus,
   SendJob,
   WhatsappStatus,
   WorkspaceSettings,
@@ -114,6 +117,28 @@ export const api = {
   },
   getSettings: () => request<WorkspaceSettings>("/api/settings"),
   getBusyLedgerStatus: () => request<BusyLedgerStatus>("/api/busy-ledger/status"),
+  getPounchaStatus: () => request<PounchaSyncStatus>("/api/pouncha-sync/status"),
+  getPounchaRun: (runId: string) =>
+    request<PounchaSyncRun>(`/api/pouncha-sync/runs/${encodeURIComponent(runId)}`),
+  runPounchaSync: (payload?: { start_date?: string; end_date?: string }) =>
+    request<PounchaSyncQueued>("/api/pouncha-sync/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload ?? {}),
+    }),
+  uploadPounchaExcel: (
+    file: File,
+    options?: { startDate?: string; endDate?: string },
+  ) => {
+    const body = new FormData();
+    body.append("file", file);
+    if (options?.startDate) body.append("start_date", options.startDate);
+    if (options?.endDate) body.append("end_date", options.endDate);
+    return request<PounchaSyncRun>("/api/pouncha-sync/upload-excel", {
+      method: "POST",
+      body,
+    });
+  },
   importBusyLedger: (
     file?: File | null,
     options?: { category?: DocumentCategory; dryRun?: boolean },

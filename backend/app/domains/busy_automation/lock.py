@@ -6,6 +6,7 @@ import ctypes
 import logging
 import os
 import sys
+import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -17,6 +18,13 @@ from app.domains.busy_automation.errors import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Windows file locks are process-scoped, so two threads in the same backend can
+# both acquire the same lock file. Keep one process-wide guard as well so a
+# ledger import and a Pouncha export never drive the BUSY UI at the same time.
+# The guard is reentrant because the Pouncha service takes its own lock and then
+# the shared export runner takes the BUSY automation lock in the same thread.
+_PROCESS_LOCK = threading.RLock()
 
 
 def _try_lock(fd: int) -> bool:
@@ -54,13 +62,19 @@ def _unlock(fd: int) -> None:
 def acquire_busy_lock(lock_path: Path, timeout: float) -> Iterator[None]:
     """Hold an exclusive OS file lock for the duration of a UI automation job."""
 
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    deadline = time.monotonic() + timeout
+    if not _PROCESS_LOCK.acquire(timeout=max(timeout, 0.0)):
+        raise BusyLockTimeoutError(
+            f"BUSY automation is already running in this process; waited "
+            f"{timeout:.0f}s for {lock_path.name}."
+        )
+    fd = -1
     locked = False
     try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
         if os.fstat(fd).st_size == 0:
             os.write(fd, b"0")
-        deadline = time.monotonic() + timeout
         while not locked:
             locked = _try_lock(fd)
             if locked:
@@ -78,7 +92,9 @@ def acquire_busy_lock(lock_path: Path, timeout: float) -> Iterator[None]:
                 _unlock(fd)
             except OSError as exc:
                 logger.warning("Could not release BUSY automation lock: %s", exc)
-        os.close(fd)
+        if fd >= 0:
+            os.close(fd)
+        _PROCESS_LOCK.release()
 
 
 def _windows_idle_seconds() -> float | None:

@@ -171,6 +171,11 @@ def infer_category(
 ) -> str:
     if category_hint in CATEGORY_VALUES:
         return category_hint
+    normalized_type = " ".join(voucher_type.split()).casefold()
+    if normalized_type in {"salereturn", "slrt"}:
+        return "credit_notes"
+    if normalized_type in {"purchase return", "prrt", "purcreturn"}:
+        return "debit_notes"
     combined = " ".join((voucher_type, party, preamble)).casefold()
     if "credit note" in combined or re.search(r"\bcredit\s+notes?\b", combined):
         return "credit_notes"

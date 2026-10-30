@@ -142,6 +142,50 @@ export interface BusyLedgerStatus {
   categories: BusyLedgerCategoryStatus[];
 }
 
+export type PounchaRunStatus = "queued" | "running" | "success" | "failed" | "skipped";
+
+export interface PounchaSyncRun {
+  run_id: string;
+  trigger_type: string;
+  start_date: string;
+  end_date: string;
+  exported_sale_count: number;
+  already_in_sheet_count: number;
+  appended_count: number;
+  status: PounchaRunStatus;
+  error_message: string | null;
+  warnings: string[];
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface PounchaSchedulerStatus {
+  enabled: boolean;
+  running: boolean;
+  timezone: string;
+  next_run_at: string | null;
+  waiting_for_busy: boolean;
+  last_check_at: string | null;
+  last_success_at: string | null;
+  last_error: string | null;
+}
+
+export interface PounchaSyncStatus {
+  configured: boolean;
+  sheets_configured: boolean;
+  busy_configured: boolean;
+  sync_enabled: boolean;
+  scheduler: PounchaSchedulerStatus;
+  last_run: PounchaSyncRun | null;
+  active_run: PounchaSyncRun | null;
+  recent_runs: PounchaSyncRun[];
+}
+
+export interface PounchaSyncQueued {
+  run_id: string;
+  status: "queued" | "running";
+}
+
 export interface SendJobFile {
   file_id: string;
   category?: DocumentType | string;

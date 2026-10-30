@@ -73,6 +73,44 @@ def title_matches(pattern: str, title: str) -> bool:
     return re.search(pattern, title, re.IGNORECASE) is not None
 
 
+def busy_window_visible(title_re: str) -> bool:
+    """Return whether a visible top-level window matches the BUSY title regex.
+
+    This is a read-only probe used by the scheduler to skip catch-up runs
+    quietly while BUSY is closed. It never attaches to or starts BUSY.
+    """
+
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        found = False
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)  # type: ignore[untyped-decorator]
+        def _callback(hwnd: int, _lparam: int) -> bool:
+            nonlocal found
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length <= 0:
+                return True
+            buffer = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buffer, length + 1)
+            if title_matches(title_re, buffer.value):
+                found = True
+                return False
+            return True
+
+        user32.EnumWindows(_callback, 0)
+        return found
+    except Exception as exc:  # pragma: no cover - Windows API failure
+        logger.debug("Could not probe for the BUSY window: %s", exc)
+        return False
+
+
 class BusySessionProtocol(Protocol):
     """The subset of the session used by recipes and the exporter."""
 
@@ -101,6 +139,10 @@ class BusySessionProtocol(Protocol):
     def set_control_text(self, control: Any, text: str) -> bool: ...
 
     def click(self, window: Any, spec: Mapping[str, Any]) -> bool: ...
+
+    def set_checkbox(self, spec: Mapping[str, Any], checked: bool) -> bool: ...
+
+    def select_combo_item(self, spec: Mapping[str, Any], value: str) -> bool: ...
 
     def uncheck(self, control: Any) -> bool: ...
 
@@ -448,24 +490,75 @@ class BusySession:
                 logger.debug("Could not click a BUSY control: %s", exc)
                 return False
 
+    def set_checkbox(self, spec: Mapping[str, Any], checked: bool) -> bool:
+        """Set a real checkbox/radio control to ``checked`` without guessing."""
+
+        control = self._first_child_anywhere(spec)
+        if control is None:
+            return False
+        state = self._toggle_state(control)
+        if state is None:
+            logger.debug(
+                "Refusing to change a control without a toggle state: %s",
+                self.window_title(control),
+            )
+            return False
+        if bool(state) == checked:
+            return True
+        try:
+            control.click_input()
+            return True
+        except Exception:
+            try:
+                control.click()
+                return True
+            except Exception as exc:
+                logger.debug("Could not toggle a BUSY checkbox: %s", exc)
+                return False
+
+    def select_combo_item(self, spec: Mapping[str, Any], value: str) -> bool:
+        """Choose an item in a combo box, verifying the resulting selection."""
+
+        control = self._first_child_anywhere(spec)
+        if control is None:
+            return False
+        try:
+            control.select(value)
+        except Exception:
+            try:
+                control.set_edit_text(value)
+            except Exception:
+                try:
+                    self.focus(control)
+                    self._send_keys_impl("^a", pause=self.profile.key_pause_sec)
+                    self.type_text(value, window=control)
+                    self._send_keys_impl("{ENTER}", pause=self.profile.key_pause_sec)
+                except Exception as exc:
+                    logger.debug("Could not select a BUSY combo item: %s", exc)
+                    return False
+        try:
+            selected = str(control.window_text()).strip()
+        except Exception:
+            selected = ""
+        if selected and selected.casefold() != value.casefold():
+            logger.debug(
+                "BUSY combo shows %r after selecting %r; continuing.",
+                selected,
+                value,
+            )
+        return True
+
     def uncheck(self, control: Any) -> bool:
         """Uncheck a real checkbox, but never click an unknown control."""
 
-        checked: int | None = None
-        try:
-            if hasattr(control, "get_toggle_state"):
-                checked = int(control.get_toggle_state())
-            elif hasattr(control, "is_checked"):
-                checked = 1 if control.is_checked() else 0
-        except Exception:
-            checked = None
+        checked = self._toggle_state(control)
         if checked is None:
             logger.debug(
                 "Refusing to uncheck a control without a toggle state: %s",
                 self.window_title(control),
             )
             return False
-        if checked == 0:
+        if not checked:
             return True
         try:
             control.click_input()
@@ -534,6 +627,24 @@ class BusySession:
         children = self.find_children(window, spec)
         return children[0] if children else None
 
+    def _first_child_anywhere(self, spec: Mapping[str, Any]) -> Any | None:
+        for window in [self._main, *self.visible_dialogs()]:
+            child = self._first_child(window, spec)
+            if child is not None:
+                return child
+        return None
+
+    @staticmethod
+    def _toggle_state(control: Any) -> bool | None:
+        try:
+            if hasattr(control, "get_toggle_state"):
+                return bool(control.get_toggle_state())
+            if hasattr(control, "is_checked"):
+                return bool(control.is_checked())
+        except Exception:
+            return None
+        return None
+
     @staticmethod
     def _spec_kwargs(spec: Mapping[str, Any]) -> dict[str, Any]:
         kwargs: dict[str, Any] = {}
@@ -568,9 +679,7 @@ def _connect(
     except Exception as exc:
         errors.append(str(exc))
     try:
-        window = desktop_cls(backend="win32").window(
-            title_re=title_re, timeout=timeout
-        )
+        window = desktop_cls(backend="win32").window(title_re=title_re)
         return application_cls(backend="win32").connect(
             handle=window.handle, timeout=timeout
         )

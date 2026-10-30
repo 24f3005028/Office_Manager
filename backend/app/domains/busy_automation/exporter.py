@@ -23,6 +23,7 @@ from app.domains.busy_automation.session import (
 logger = logging.getLogger(__name__)
 
 SUPPORTED_EXPORT_SUFFIXES = frozenset({".xlsx", ".xlsm", ".xls"})
+_EXTENSION_CANDIDATES = ("", ".xlsx", ".xlsm", ".xls")
 
 
 class BusyExporter:
@@ -43,14 +44,15 @@ class BusyExporter:
     def export(self, session: BusySessionProtocol, target: Path) -> Path:
         target = Path(target)
         if target.suffix.casefold() not in SUPPORTED_EXPORT_SUFFIXES:
-            raise BusyExportError(
-                f"Unsupported BUSY export path: {target}"
-            )
+            raise BusyExportError(f"Unsupported BUSY export path: {target}")
         target.parent.mkdir(parents=True, exist_ok=True)
-        if target.exists():
-            target.unlink()
+        entry_path = self._entry_path(target)
+        candidates = self._candidate_paths(entry_path)
+        for candidate in candidates:
+            if candidate.exists():
+                candidate.unlink()
 
-        logger.info("Exporting the BUSY report to %s", target)
+        logger.info("Exporting the BUSY report to %s", entry_path)
         session.focus()
         session.send_keys(self.export_profile.hotkey)
         dialog = session.wait_for_dialog(
@@ -58,26 +60,74 @@ class BusyExporter:
             timeout=self.export_profile.dialog_wait_sec,
         )
         session.focus(dialog)
-        if self.export_profile.format_keys:
-            session.send_keys(
-                self.export_profile.format_keys, window=dialog
-            )
-        self._set_path(session, dialog, target)
+        self._set_format(session, dialog)
+        self._set_path(session, dialog, entry_path)
         self._uncheck_open_after(session, dialog)
         session.send_keys(self.export_profile.confirm_keys, window=dialog)
-        self._wait_for_file(session, dialog, target)
-        self._validate_workbook(target)
+        exported = self._wait_for_file(session, dialog, candidates)
+        self._validate_workbook(exported)
+        return exported
+
+    def _entry_path(self, target: Path) -> Path:
+        """Return the path text BUSY expects.
+
+        BUSY 21 appends ``.xlsx`` itself when the Data Format is Microsoft
+        Excel, so the File Name field must be entered without the extension.
+        """
+
+        if self.export_profile.append_extension:
+            return target.with_suffix("")
         return target
+
+    def _candidate_paths(self, entry_path: Path) -> tuple[Path, ...]:
+        if not self.export_profile.append_extension:
+            return (entry_path,)
+        stem = entry_path
+        if stem.suffix.casefold() in SUPPORTED_EXPORT_SUFFIXES:
+            stem = stem.with_suffix("")
+        candidates = [
+            stem.with_name(stem.name + suffix) for suffix in _EXTENSION_CANDIDATES
+        ]
+        # Prefer .xlsx first so a stale extensionless file cannot win.
+        unique: list[Path] = []
+        for candidate in sorted(
+            candidates, key=lambda item: (item.suffix != ".xlsx", str(item))
+        ):
+            if candidate not in unique:
+                unique.append(candidate)
+        return tuple(unique)
+
+    def _set_format(self, session: BusySessionProtocol, dialog: Any) -> None:
+        profile = self.export_profile
+        if profile.format_control:
+            if not session.select_combo_item(
+                profile.format_control, profile.format_value
+            ):
+                raise BusyExportError(
+                    "Could not set the BUSY export Data Format to "
+                    f"{profile.format_value!r}. Check export.format_control in "
+                    "the UI profile."
+                )
+            return
+        if profile.format_keys:
+            session.send_keys(profile.format_keys, window=dialog)
+            return
+        raise BusyExportError(
+            "BUSY export Data Format is not calibrated. Set "
+            "export.format_control or export.format_keys in "
+            "config/busy_ui_profile.json so the export is Microsoft Excel."
+        )
 
     def _set_path(
         self,
         session: BusySessionProtocol,
         dialog: Any,
-        target: Path,
+        entry_path: Path,
     ) -> None:
         profile = self.export_profile
+        text = str(entry_path)
         if profile.path_control:
-            if not session.set_text(dialog, profile.path_control, str(target)):
+            if not session.set_text(dialog, profile.path_control, text):
                 raise BusyExportError(
                     "Could not fill the BUSY export path field. Check "
                     "export.path_control in the UI profile."
@@ -86,20 +136,18 @@ class BusyExporter:
         if profile.path_focus_keys:
             session.send_keys(profile.path_focus_keys, window=dialog)
             session.send_keys("^a", window=dialog)
-            session.type_text(str(target), window=dialog)
+            session.type_text(text, window=dialog)
             return
         if profile.auto_detect_path_control:
             edits = session.find_children(dialog, {"class_name": "Edit"})
             if len(edits) == 1:
-                if not session.set_control_text(edits[0], str(target)):
+                if not session.set_control_text(edits[0], text):
                     raise BusyExportError(
                         "Could not fill the only edit field in the BUSY export dialog."
                     )
                 return
             if len(edits) > 1:
-                descriptions = [
-                    session.window_title(edit) for edit in edits
-                ]
+                descriptions = [session.window_title(edit) for edit in edits]
                 raise BusyExportError(
                     "The BUSY export dialog has "
                     f"{len(edits)} edit fields; set export.path_control in "
@@ -145,40 +193,40 @@ class BusyExporter:
         self,
         session: BusySessionProtocol,
         export_dialog: Any,
-        target: Path,
-    ) -> None:
+        candidates: tuple[Path, ...],
+    ) -> Path:
         profile = self.export_profile
         deadline = self._monotonic() + profile.file_ready_timeout_sec
         handled: set[int] = set()
-        last_signature: tuple[int, int] | None = None
-        stable_since: float | None = None
+        signatures: dict[Path, tuple[int, int]] = {}
+        stable_since: dict[Path, float] = {}
         while True:
-            self._handle_post_export_dialogs(
-                session, export_dialog, handled
-            )
-            try:
-                stat = target.stat()
-                signature = (stat.st_size, stat.st_mtime_ns)
-            except OSError:
-                signature = None
-            if signature is not None and signature[0] > 0:
+            self._handle_post_export_dialogs(session, export_dialog, handled)
+            for candidate in candidates:
+                try:
+                    stat = candidate.stat()
+                    signature = (stat.st_size, stat.st_mtime_ns)
+                except OSError:
+                    continue
+                if signature[0] <= 0:
+                    continue
                 now = self._monotonic()
-                if signature != last_signature:
-                    last_signature = signature
-                    stable_since = now
-                elif (
-                    stable_since is not None
-                    and now - stable_since >= profile.file_stable_sec
-                ):
-                    return
+                if signatures.get(candidate) != signature:
+                    signatures[candidate] = signature
+                    stable_since[candidate] = now
+                    continue
+                started = stable_since.get(candidate)
+                if started is not None and now - started >= profile.file_stable_sec:
+                    return candidate
             if self._monotonic() >= deadline:
                 titles = [
                     session.window_title(window)
                     for window in session.visible_dialogs()
                 ]
+                expected = ", ".join(str(item) for item in candidates)
                 raise BusyExportError(
                     "BUSY did not create a stable Excel export at "
-                    f"{target} within {profile.file_ready_timeout_sec:.1f}s. "
+                    f"{expected} within {profile.file_ready_timeout_sec:.1f}s. "
                     f"Visible windows: {titles or 'none'}."
                 )
             self._sleep(0.2)
@@ -242,23 +290,27 @@ class BusyExporter:
 
     def _validate_workbook(self, target: Path) -> None:
         if not target.is_file() or target.stat().st_size == 0:
-            raise BusyExportError(
-                f"BUSY created an empty export file: {target}"
-            )
-        suffix = target.suffix.casefold()
+            raise BusyExportError(f"BUSY created an empty export file: {target}")
+        with target.open("rb") as handle:
+            magic = handle.read(8)
+        is_zip = magic.startswith(b"PK\x03\x04")
+        is_ole = magic.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
         try:
-            if suffix in {".xlsx", ".xlsm"}:
-                workbook = load_workbook(
-                    target, read_only=True, data_only=True
-                )
-                try:
-                    if not workbook.sheetnames:
-                        raise BusyExportError(
-                            "The BUSY export contains no worksheets."
-                        )
-                finally:
-                    workbook.close()
-            else:
+            if is_zip:
+                # Pass a file object so openpyxl does not reject an
+                # extensionless BUSY export based on its filename.
+                with target.open("rb") as handle:
+                    workbook = load_workbook(
+                        handle, read_only=True, data_only=True
+                    )
+                    try:
+                        if not workbook.sheetnames:
+                            raise BusyExportError(
+                                "The BUSY export contains no worksheets."
+                            )
+                    finally:
+                        workbook.close()
+            elif is_ole:
                 import xlrd  # type: ignore[import-untyped]
 
                 workbook = xlrd.open_workbook(target, on_demand=True)
@@ -269,10 +321,14 @@ class BusyExporter:
                         )
                 finally:
                     workbook.release_resources()
+            else:
+                raise BusyExportError(
+                    "The BUSY export is not a readable Excel workbook: "
+                    "unrecognized file signature."
+                )
         except BusyExportError:
             raise
         except Exception as exc:
             raise BusyExportError(
                 f"The BUSY export is not a readable Excel workbook: {exc}"
             ) from exc
-

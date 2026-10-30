@@ -24,6 +24,8 @@ class BusyRecipeProfile(BaseModel):
     name: str = "Sales Register"
     navigation_keys: list[str] = Field(default_factory=list)
     navigation_titles: list[str] = Field(default_factory=list)
+    modal_titles: list[str] = Field(default_factory=list)
+    modal_keys: list[str] = Field(default_factory=list)
     series_keys: str | None = None
     series_value_keys: str | None = None
     series_control: dict[str, Any] | None = None
@@ -37,23 +39,54 @@ class BusyRecipeProfile(BaseModel):
     load_wait_sec: float = 1.5
     wait_timeout_sec: float = 10.0
     ready_title_re: str | None = None
+    calibrated: bool = True
+
+
+class AccountLedgerProfile(BusyRecipeProfile):
+    """The BUSY 21 Rel 14.2 Account Ledger filter form.
+
+    ``calibrated`` is deliberately false in the shipped JSON template. The
+    pipeline refuses to run until a live calibration has filled in the actual
+    focus keys or control selectors.
+    """
+
+    name: str = "Account Ledger - Sales"
+    format_name: str | None = "BAGS"
+    format_name_control: dict[str, Any] | None = None
+    format_name_focus_keys: str | None = None
+    account_name: str | None = "Sales"
+    account_control: dict[str, Any] | None = None
+    account_focus_keys: str | None = None
+    optional_fields_control: dict[str, Any] | None = None
+    optional_fields_focus_keys: str | None = None
+    optional_fields_value: bool = True
+    bill_references_control: dict[str, Any] | None = None
+    bill_references_focus_keys: str | None = None
+    bill_references_value: bool = True
+    calibrated: bool = False
 
 
 class BusyExportProfile(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     hotkey: str = "%e"
-    dialog_title_re: str = r".*(Export|Save As).*"
+    dialog_title_re: str = r".*(Export Report Data|Export|Save As).*"
+    format_control: dict[str, Any] | None = None
+    format_value: str = "Microsoft Excel"
     format_keys: str = ""
     path_focus_keys: str | None = None
     path_control: dict[str, Any] | None = None
     auto_detect_path_control: bool = True
+    append_extension: bool = False
     open_after_keys: str | None = "n"
     open_after_control: dict[str, Any] | None = None
-    open_after_dialog_title_re: str | None = r".*(Open|View).*(file|export).*"
+    open_after_dialog_title_re: str | None = r"(?i).*(open|view).*(file|export|after).*"
     auto_detect_open_after_control: bool = True
     confirm_keys: str = "{ENTER}"
-    success_title_re: str = r".*(Export|Saved|Completed|Success).*"
+    success_title_re: str = (
+        r"(?i).*(export completed|export successful|data exported|"
+        r"saved successfully|export saved|export complete).*"
+    )
     success_dismiss_keys: str = "{ENTER}"
     dialog_wait_sec: float = 1.5
     file_ready_timeout_sec: float = 20.0
@@ -73,6 +106,19 @@ class BusyUiProfile(BaseModel):
     allowed_dialog_title_res: list[str] = Field(default_factory=list)
     allowed_dialog_dismiss_keys: str = "{ENTER}"
     sales_register: BusyRecipeProfile = Field(default_factory=BusyRecipeProfile)
+    account_ledger_sales: AccountLedgerProfile = Field(
+        default_factory=AccountLedgerProfile
+    )
+    account_ledger_sales_return: AccountLedgerProfile = Field(
+        default_factory=lambda: AccountLedgerProfile(
+            name="Account Ledger - Sales Return", account_name="Sales Return"
+        )
+    )
+    purchase_return: AccountLedgerProfile = Field(
+        default_factory=lambda: AccountLedgerProfile(
+            name="Purchase Return", account_name="Purchase Return"
+        )
+    )
     export: BusyExportProfile = Field(default_factory=BusyExportProfile)
 
 

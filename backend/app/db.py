@@ -99,6 +99,26 @@ CREATE TABLE IF NOT EXISTS pdf_date_index (
     extractor_version INTEGER NOT NULL DEFAULT 0,
     checked_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS pouncha_sync_runs (
+    run_id TEXT PRIMARY KEY,
+    trigger_type TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    exported_sale_count INTEGER NOT NULL DEFAULT 0,
+    already_in_sheet_count INTEGER NOT NULL DEFAULT 0,
+    appended_count INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    error_message TEXT,
+    warnings TEXT,
+    started_at TEXT NOT NULL,
+    completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_pouncha_runs_started
+    ON pouncha_sync_runs(started_at);
+CREATE INDEX IF NOT EXISTS idx_pouncha_runs_status
+    ON pouncha_sync_runs(status, completed_at);
 """
 
 

@@ -143,6 +143,16 @@ export function HomePage() {
           <span className="module-action">{ready ? "Open sender" : initializing ? "Waiting for WhatsApp" : "Open setup"} <span aria-hidden="true">→</span></span>
         </Link>
 
+        <Link className="module-card module-card-secondary" href="/pouncha-sync">
+          <span className="module-icon" aria-hidden="true">⇄</span>
+          <div>
+            <p className="eyebrow">Daily sales sync</p>
+            <h3>Pouncha 26-27</h3>
+            <p>Append new BUSY Sale bills to the POUNCHA 26-27 Google Sheet every midnight, with a manual sync and Excel fallback.</p>
+          </div>
+          <span className="module-action">Open Pouncha sync <span aria-hidden="true">→</span></span>
+        </Link>
+
         <Link className="module-card module-card-secondary" href="/settings">
           <span className="module-icon" aria-hidden="true">⚙</span>
           <div>
