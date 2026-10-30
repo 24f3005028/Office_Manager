@@ -284,9 +284,20 @@ tr.new-date-group td { border-top: 1px solid #e5dccb; }.optional { color: #b5c0b
 @keyframes pulse { 50% { opacity: .45; transform: scale(.78); } }
 
 /* BUSY ledger sync and verified date badges */
-.busy-sync-panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(250px, 330px); gap: 24px; align-items: center; margin-bottom: 18px; padding: 22px 24px; border-radius: 18px; }
-.busy-sync-copy .muted-text { max-width: 640px; margin-top: 8px; }
-.busy-excel-tag { padding: 6px 9px; border-radius: 99px; color: #166534; background: #dcfce7; font: 9px "DM Mono", monospace; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+.busy-sync-panel { display: block; margin-bottom: 18px; padding: 0; border-radius: 18px; overflow: hidden; }
+.busy-sync-heading { margin: 0; font: 700 16px/1.25 "Manrope", sans-serif; letter-spacing: -.03em; }
+.busy-sync-toggle { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; padding: 18px 24px; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.busy-sync-toggle:hover { background: #f8fafc; }
+.busy-sync-toggle:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
+.busy-sync-heading-copy { display: grid; gap: 4px; min-width: 0; }
+.busy-sync-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 11px; }
+.busy-sync-title { font: inherit; }
+.busy-sync-pill { padding: 5px 8px; border: 1px solid var(--line); border-radius: 99px; color: var(--ink-soft); background: #f8fafc; font: 9px "DM Mono", monospace; letter-spacing: .04em; white-space: nowrap; }
+.busy-sync-pill.ready { border-color: #bbf7d0; color: #166534; background: #f0fdf4; }
+.busy-sync-chevron { flex: 0 0 auto; color: var(--ink-soft); font-size: 18px; line-height: 1; transition: transform .18s; }
+.busy-sync-panel.open .busy-sync-chevron { transform: rotate(180deg); }
+.busy-sync-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(250px, 330px); gap: 24px; align-items: start; padding: 18px 24px 22px; border-top: 1px solid var(--line); }
+.busy-sync-copy .muted-text { max-width: 640px; margin-top: 0; }
 .busy-metrics { display: flex; flex-wrap: wrap; gap: 12px 32px; margin-top: 15px; }
 .busy-metric { display: grid; gap: 3px; }
 .busy-metric > span { color: var(--ink-faint); font: 9px "DM Mono", monospace; letter-spacing: .08em; text-transform: uppercase; }
@@ -303,7 +314,12 @@ tr.new-date-group td { border-top: 1px solid #e5dccb; }.optional { color: #b5c0b
 .busy-warnings summary { cursor: pointer; font-weight: 700; }
 .busy-warnings ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.5; }
 .busy-warnings p { margin: 5px 0 0; }
-.busy-sync-action { display: grid; gap: 7px; justify-items: stretch; }
+.busy-sync-action { display: grid; gap: 9px; align-content: start; justify-items: stretch; }
+.busy-manual-import > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink-soft); background: #f8fafc; font-size: 10px; font-weight: 700; cursor: pointer; list-style: none; }
+.busy-manual-import > summary::-webkit-details-marker { display: none; }
+.busy-manual-import > summary::after { content: "⌄"; font-size: 13px; line-height: 1; transition: transform .18s; }
+.busy-manual-import[open] > summary { margin-bottom: 7px; }
+.busy-manual-import[open] > summary::after { transform: rotate(180deg); }
 .busy-dropzone { display: grid; place-items: center; gap: 3px; padding: 18px 14px; border: 1px dashed #93c5fd; border-radius: 12px; color: #1d4ed8; background: #f8fbff; text-align: center; cursor: pointer; transition: border-color .18s, background .18s, transform .18s; }
 .busy-dropzone:hover, .busy-dropzone.dragging { border-color: #2563eb; background: #eff6ff; }
 .busy-dropzone.dragging { transform: translateY(-1px); }
@@ -328,11 +344,13 @@ tr.new-date-group td { border-top: 1px solid #e5dccb; }.optional { color: #b5c0b
 .confirmation-warning { margin: 0 0 14px; padding: 8px 10px; border-radius: 7px; color: #92400e; background: #fffbeb; font-size: 10px; line-height: 1.5; }
 
 @media (max-width: 900px) {
-  .busy-sync-panel { grid-template-columns: 1fr; }
+  .busy-sync-body { grid-template-columns: 1fr; }
   .busy-refresh { justify-self: start; }
 }
 @media (max-width: 620px) {
-  .busy-sync-panel { padding: 18px; border-radius: 14px; }
+  .busy-sync-toggle { padding: 16px 18px; }
+  .busy-sync-body { padding: 16px 18px 18px; }
+  .busy-sync-panel { border-radius: 14px; }
   .busy-metrics { gap: 10px 22px; }
 }
 

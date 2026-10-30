@@ -75,7 +75,13 @@ def create_app(
                 ignored_directory_names=runtime_settings.ignored_directory_names,
             ),
             busy_ledger_service,
-            PdfDateResolver(database) if runtime_settings.pdf_date_extraction else None,
+            PdfDateResolver(
+                database,
+                min_date=runtime_settings.pdf_date_min_date,
+                max_date=runtime_settings.pdf_date_max_date,
+            )
+            if runtime_settings.pdf_date_extraction
+            else None,
         )
         repository = SendJobRepository(database)
         runtime_bridge = bridge if bridge is not None else HttpWhatsAppBridge(

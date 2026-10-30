@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -75,6 +76,7 @@ class Settings(BaseSettings):
         extra="ignore",
         case_sensitive=False,
         populate_by_name=True,
+        env_ignore_empty=True,
     )
 
     bills_roots: str = Field(default="|".join(DEFAULT_BILLS_ROOTS), validation_alias="BILLS_ROOTS")
@@ -101,6 +103,40 @@ class Settings(BaseSettings):
     busy_financial_year: str = Field(default="26-27", validation_alias="BUSY_FINANCIAL_YEAR")
     pdf_date_extraction: bool = Field(
         default=True, validation_alias="PDF_DATE_EXTRACTION"
+    )
+    pdf_date_min_date: date | None = Field(
+        default=None, validation_alias="PDF_DATE_MIN_DATE"
+    )
+    pdf_date_max_date: date | None = Field(
+        default=None, validation_alias="PDF_DATE_MAX_DATE"
+    )
+    busy_executable_path: Path = Field(
+        default=Path(r"E:\C N 26-27\BusyWin\Busy21.exe"),
+        validation_alias="BUSY_EXECUTABLE_PATH",
+    )
+    busy_window_title_re: str = Field(
+        default=r".*BUSY.*", validation_alias="BUSY_WINDOW_TITLE_RE"
+    )
+    busy_expected_company_substring: str = Field(
+        default="H.S. Traders", validation_alias="BUSY_EXPECTED_COMPANY_SUBSTRING"
+    )
+    busy_automation_timeout_seconds: float = Field(
+        default=60.0, gt=0, validation_alias="BUSY_AUTOMATION_TIMEOUT_SECONDS"
+    )
+    busy_min_user_idle_seconds: float = Field(
+        default=3.0, ge=0, validation_alias="BUSY_MIN_USER_IDLE_SECONDS"
+    )
+    busy_ui_profile_path: Path = Field(
+        default_factory=lambda: BACKEND_DIR / "config" / "busy_ui_profile.json",
+        validation_alias="BUSY_UI_PROFILE_PATH",
+    )
+    busy_lock_path: Path = Field(
+        default_factory=lambda: BACKEND_DIR / "data" / "busy_automation.lock",
+        validation_alias="BUSY_LOCK_PATH",
+    )
+    busy_automation_temp_dir: Path = Field(
+        default_factory=lambda: BACKEND_DIR / "data" / "busy_automation",
+        validation_alias="BUSY_AUTOMATION_TEMP_DIR",
     )
     whatsapp_bridge_url: str = Field(
         default="http://127.0.0.1:3001", validation_alias="WHATSAPP_BRIDGE_URL"

@@ -95,6 +95,77 @@ def test_missing_or_invalid_date_returns_none(tmp_path: Path) -> None:
     assert extract_pdf_date(tmp_path / "missing.pdf", "bills") is None
 
 
+def test_prefers_invoice_date_over_acknowledgement_date(tmp_path: Path) -> None:
+    pdf = tmp_path / "HST-1012 customer.pdf"
+    make_pdf(
+        pdf,
+        [
+            "TAX INVOICE",
+            "Ack No. : 123456789",
+            "Ack Date : 26-10-2026",
+            "Invoice Date : 25-10-2026",
+        ],
+    )
+
+    assert extract_pdf_date(pdf, "bills") == date(2026, 10, 25)
+
+
+def test_ignores_against_bill_dated_reference(tmp_path: Path) -> None:
+    pdf = tmp_path / "HST-1012 customer.pdf"
+    make_pdf(
+        pdf,
+        [
+            "TAX INVOICE",
+            "Invoice No. : HST/26-27/1012",
+            "Against Bill No. HST-772 Dated : 14-09-2026",
+            "Dated : 25-10-2026",
+        ],
+    )
+
+    assert extract_pdf_date(pdf, "bills") == date(2026, 10, 25)
+
+
+def test_ignores_order_and_dispatch_dates(tmp_path: Path) -> None:
+    pdf = tmp_path / "HST-1012 customer.pdf"
+    make_pdf(
+        pdf,
+        [
+            "TAX INVOICE",
+            "Order Date : 01-10-2026",
+            "GR Date : 02-10-2026",
+            "Challan Date : 03-10-2026",
+            "E-Way Bill Date : 04-10-2026",
+            "Invoice Date : 25-10-2026",
+        ],
+    )
+
+    assert extract_pdf_date(pdf, "bills") == date(2026, 10, 25)
+
+
+def test_supports_month_name_dates(tmp_path: Path) -> None:
+    pdf = tmp_path / "HST-1012 customer.pdf"
+    make_pdf(pdf, ["TAX INVOICE", "Invoice Date : 25-Oct-2026"])
+
+    assert extract_pdf_date(pdf, "bills") == date(2026, 10, 25)
+
+
+def test_rejects_dates_outside_the_configured_window(tmp_path: Path) -> None:
+    old = tmp_path / "old.pdf"
+    future = tmp_path / "future.pdf"
+    make_pdf(old, ["TAX INVOICE", "Invoice Date : 01-01-2020"])
+    make_pdf(future, ["TAX INVOICE", "Invoice Date : 01-01-2030"])
+
+    assert extract_pdf_date(old, "bills") is None
+    assert extract_pdf_date(future, "bills") is None
+
+
+def test_returns_none_when_header_has_multiple_unlabelled_dates(tmp_path: Path) -> None:
+    pdf = tmp_path / "ambiguous.pdf"
+    make_pdf(pdf, ["TAX INVOICE", "26-10-2026", "25-10-2026"])
+
+    assert extract_pdf_date(pdf, "bills") is None
+
+
 def test_resolver_uses_printed_date_and_caches_the_result(tmp_path: Path) -> None:
     pdf = tmp_path / "HST-1012 customer.pdf"
     make_pdf(pdf, ["TAX INVOICE", "Dated : 26-09-2026"])
@@ -123,6 +194,29 @@ def test_resolver_uses_printed_date_and_caches_the_result(tmp_path: Path) -> Non
     os.utime(pdf, (later, later))
     refreshed = record_for(pdf)
     resolver.apply_effective_dates([refreshed])
+    assert calls == 2
+
+
+def test_cache_version_change_forces_re_extraction(tmp_path: Path) -> None:
+    pdf = tmp_path / "HST-1012 customer.pdf"
+    make_pdf(pdf, ["TAX INVOICE", "Dated : 26-09-2026"])
+    database = Database(tmp_path / "cache.sqlite3")
+    database.initialize()
+    calls = 0
+
+    def counting_extractor(path: Path, category: str) -> date | None:
+        nonlocal calls
+        calls += 1
+        return extract_pdf_date(path, category)
+
+    record = record_for(pdf)
+    PdfDateResolver(
+        database, extractor=counting_extractor, extractor_version=1
+    ).apply_effective_dates([record])
+    PdfDateResolver(
+        database, extractor=counting_extractor, extractor_version=2
+    ).apply_effective_dates([record])
+
     assert calls == 2
 
 

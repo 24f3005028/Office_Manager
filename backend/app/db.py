@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS pdf_date_index (
     mtime_ns INTEGER NOT NULL,
     size_bytes INTEGER NOT NULL,
     voucher_date TEXT,
+    extractor_version INTEGER NOT NULL DEFAULT 0,
     checked_at TEXT NOT NULL
 );
 """
@@ -132,6 +133,11 @@ class Database:
                 "label_message_id": "ADD COLUMN label_message_id TEXT",
                 "error_code": "ADD COLUMN error_code TEXT",
                 "outcome": "ADD COLUMN outcome TEXT",
+            },
+            "pdf_date_index": {
+                "extractor_version": (
+                    "ADD COLUMN extractor_version INTEGER NOT NULL DEFAULT 0"
+                ),
             },
         }
         for table, columns in migrations.items():

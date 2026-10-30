@@ -1,5 +1,7 @@
+from datetime import date
 from pathlib import Path
 
+import pytest
 from app.config import Settings
 from app.main import create_app
 from fastapi.testclient import TestClient
@@ -14,6 +16,30 @@ def make_settings(tmp_path: Path, bills: Path, credit_notes: Path, debit_notes: 
         debit_notes_roots=[debit_notes],
         database_path=tmp_path / "settings.sqlite3",
     )
+
+
+def test_empty_optional_pdf_date_env_values_are_ignored(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PDF_DATE_MIN_DATE", "")
+    monkeypatch.setenv("PDF_DATE_MAX_DATE", "")
+
+    settings = Settings()
+
+    assert settings.pdf_date_min_date is None
+    assert settings.pdf_date_max_date is None
+
+
+def test_pdf_date_env_values_are_parsed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PDF_DATE_MIN_DATE", "2026-04-01")
+    monkeypatch.setenv("PDF_DATE_MAX_DATE", "2027-03-31")
+
+    settings = Settings()
+
+    assert settings.pdf_date_min_date == date(2026, 4, 1)
+    assert settings.pdf_date_max_date == date(2027, 3, 31)
 
 
 def test_document_roots_are_saved_and_refresh_the_scanner(tmp_path: Path) -> None:

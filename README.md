@@ -60,10 +60,11 @@ multi-folder setup for bills, credit notes, and debit notes before allowing a se
 
 ## Date and ordering rules
 
-- Voucher dates are read automatically from the text layer of each PDF (`Dated`,
-  `Cr. Note Date`, or `Dr. Note Date`). No Excel export is required. The date is cached by file
-  size and modification time, so the first scan reads every PDF and later scans only re-read new
-  or changed files.
+- Voucher dates are read automatically from the text layer of each PDF using labelled voucher
+  dates (`Invoice Date`, `Bill Date`, `Dated`, `Cr. Note Date`, `Dr. Note Date`) with a top-header
+  fallback. Acknowledgement, order, dispatch, e-way and reference dates are ignored. No Excel
+  export is required. The date is cached by file size, modification time and extractor version,
+  so the first scan reads every PDF and later scans only re-read new, changed or old-version files.
 - Importing the BUSY Sales / Credit Note / Debit Note register from the optional **BUSY ledger**
   panel overrides the printed date when a ledger match exists. The uploaded workbook is deleted
   after parsing; only the minimal voucher/date/party index is kept in SQLite.
@@ -79,6 +80,30 @@ multi-folder setup for bills, credit notes, and debit notes before allowing a se
 - BUSY installation folders (`BusyWin`, `EInvoiceTemp`, `EWayBillTemp`, `SYSTEM`,
   `XMPPMessages`) are excluded from scanning. The backend never reads BUSY database, `.bds`,
   `.mdb`, XML or e-invoice files. PDF date reading uses only the PDF text layer.
+
+## BUSY desktop automation (Phase 2)
+
+Phase 2 can drive an already-running BUSY 21 desktop to export the Sales Register. It is opt-in
+and refuses to run until the UI profile is calibrated against the installed BUSY build.
+
+- Run the backend in the logged-in interactive Windows session; do not install it as a service.
+- Open BUSY 21 and log into `H.S. Traders` (the expected company is configurable).
+- Calibrate the UI without sending keys:
+
+  ```powershell
+  cd backend
+  .\.venv\Scripts\python.exe scripts/inspect_busy_ui.py --watch
+  .\.venv\Scripts\python.exe scripts/inspect_busy_ui.py --controls
+  ```
+
+  Navigate to the Sales Register manually while `--watch` is running, then copy the observed
+  control selectors into `backend/config/busy_ui_profile.json`.
+- The pipeline acquires an exclusive lock, waits for the desktop to be idle, attaches to the
+  existing BUSY window, verifies the company title, exports to `data/busy_automation/`, imports
+  the workbook through the existing ledger parser, and deletes the temporary file. It never
+  closes BUSY, never starts a second instance, and never kills `EXCEL.EXE`.
+- Credit Note and Debit Note recipes are intentionally deferred until the Sales Register profile
+  has been calibrated live.
 
 ## Startup and WhatsApp readiness
 
