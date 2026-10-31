@@ -122,7 +122,10 @@ class PounchaSyncService:
         self.sheets_client = sheets_client
         self.exporter = exporter
         self._busy_available = busy_available or (
-            lambda: busy_window_visible(settings.busy_window_title_re)
+            lambda: busy_window_visible(
+                settings.busy_window_title_re,
+                settings.busy_executable_path,
+            )
         )
         self._now = now or (lambda: datetime.now(self.timezone))
         self.timezone: tzinfo

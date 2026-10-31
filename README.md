@@ -92,6 +92,11 @@ calibrated against the installed BUSY build.
 
 - Run the backend in the logged-in interactive Windows session; do not install it as a service.
 - Open BUSY 21 and log into `H.S. Traders` (the expected company is configurable).
+- Discovery uses a direct Win32 window enumeration plus the process image path, not a WMI query or
+  pywinauto path scan. The defaults are `BUSY_EXECUTABLE_PATH=C:\BusyWin\Busy21.exe` and
+  `BUSY_WINDOW_TITLE_RE=^Busy\s+21\s+Rel\b`; the double space in the real title and a moved
+  executable are both tolerated. The runner attaches by window handle and falls back from the
+  `win32` backend to `uia` if needed.
 - The shipped `backend/config/busy_ui_profile.json` is intentionally uncalibrated. The pipeline
   refuses to run until `calibrated` is `true` and every required focus key or control selector
   is filled in.
@@ -116,6 +121,10 @@ calibrated against the installed BUSY build.
    .\.venv\Scripts\python.exe scripts\inspect_busy_ui.py --watch
    .\.venv\Scripts\python.exe scripts\inspect_busy_ui.py --controls
    ```
+
+   If auto-discovery ever misses a window, attach explicitly with `--pid <pid>`,
+   `--handle 0x<hwnd>`, or `--backend uia`; these switches only change how the read-only
+   inspector attaches.
 
 3. Navigate manually to **Account Ledger**, choose the **BAGS** format and the **Sales**
    account, and note the focus keys, modal titles, and control selectors.

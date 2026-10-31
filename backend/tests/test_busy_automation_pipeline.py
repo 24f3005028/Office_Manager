@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -40,7 +41,9 @@ from app.domains.busy_automation.recipes import (
 )
 from app.domains.busy_automation.session import (
     BusySession,
+    BusyWindowInfo,
     _connect,
+    find_busy_window,
     title_matches,
     verify_company_title,
 )
@@ -372,35 +375,132 @@ def test_title_matches_is_case_insensitive() -> None:
     assert not title_matches(r".*Export.*", "Sales Register")
 
 
-def test_connect_falls_back_to_a_window_handle(tmp_path: Path) -> None:
-    class FakeWindow:
-        handle = 4242
+def test_find_busy_window_prefers_the_title_and_path_match(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    executable = tmp_path / "Busy21.exe"
+    windows = [
+        BusyWindowInfo(
+            handle=1,
+            pid=10,
+            title="Busy 21  Rel 14.2  |  H.S. TRADERS",
+            class_name="ThunderRT6FormDC",
+            executable_path=str(executable),
+            width=1552,
+            height=840,
+        ),
+        BusyWindowInfo(
+            handle=2,
+            pid=10,
+            title="BusyWin",
+            class_name="ThunderRT6Main",
+            executable_path=str(executable),
+            width=1,
+            height=1,
+        ),
+        BusyWindowInfo(
+            handle=3,
+            pid=11,
+            title="Busy 21 Rel 14.2 | other company",
+            class_name="ThunderRT6FormDC",
+            executable_path=r"D:\Other\Busy21.exe",
+            width=1552,
+            height=840,
+        ),
+    ]
+    monkeypatch.setattr(
+        "app.domains.busy_automation.session._visible_top_level_windows",
+        lambda: windows,
+    )
 
-    class FakeDesktop:
-        def __init__(self, *, backend: str) -> None:
-            assert backend == "win32"
+    found = find_busy_window(
+        title_re=r"^Busy\s+21\s+Rel\b", executable_path=executable
+    )
 
-        def window(self, **kwargs: Any) -> FakeWindow:
-            assert "timeout" not in kwargs
-            assert kwargs["title_re"] == ".*BUSY.*"
-            return FakeWindow()
+    assert found is not None
+    assert found.handle == 1
+
+
+def test_find_busy_window_accepts_a_title_match_with_a_moved_executable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    windows = [
+        BusyWindowInfo(
+            handle=7,
+            pid=70,
+            title="Busy 21  Rel 14.2  |  H.S. TRADERS",
+            class_name="ThunderRT6FormDC",
+            executable_path=r"D:\Moved\Busy21.exe",
+            width=1552,
+            height=840,
+        )
+    ]
+    monkeypatch.setattr(
+        "app.domains.busy_automation.session._visible_top_level_windows",
+        lambda: windows,
+    )
+
+    found = find_busy_window(
+        title_re=r"^Busy\s+21\s+Rel\b",
+        executable_path=tmp_path / "Busy21.exe",
+    )
+
+    assert found is not None
+    assert found.handle == 7
+
+
+def test_connect_attaches_to_the_discovered_window(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    window = SimpleNamespace(
+        handle=4242,
+        pid=99,
+        title="Busy 21  Rel 14.2  |  H.S. TRADERS",
+        class_name="ThunderRT6FormDC",
+        executable_path=str(tmp_path / "Busy21.exe"),
+    )
+
+    def fake_find(**kwargs: Any) -> Any:
+        assert kwargs["title_re"] == r"^Busy\s+21\s+Rel\b"
+        assert kwargs["executable_path"] == tmp_path / "Busy21.exe"
+        assert kwargs["pid"] is None
+        assert kwargs["handle"] is None
+        return window
+
+    monkeypatch.setattr(
+        "app.domains.busy_automation.session.find_busy_window", fake_find
+    )
+
+    class FakeMain:
+        def wait(self, state: str, timeout: float) -> None:
+            assert state == "visible"
+            assert timeout == 1.0
+
+    class FakeApp:
+        process = 99
+
+        def window(self, **kwargs: Any) -> FakeMain:
+            assert kwargs == {"handle": 4242}
+            return FakeMain()
 
     class FakeApplication:
         def __init__(self, *, backend: str) -> None:
             assert backend == "win32"
 
-        def connect(self, **kwargs: Any) -> str:
-            if "path" in kwargs:
-                raise RuntimeError("BUSY is running from another path")
+        def connect(self, **kwargs: Any) -> FakeApp:
             assert kwargs["handle"] == 4242
             assert kwargs["timeout"] == 1.0
-            return "attached"
+            return FakeApp()
 
-    result = _connect(
-        FakeApplication, FakeDesktop, tmp_path / "Busy21.exe", ".*BUSY.*", 1.0
+    app, main = _connect(
+        FakeApplication,
+        tmp_path / "Busy21.exe",
+        r"^Busy\s+21\s+Rel\b",
+        1.0,
     )
 
-    assert result == "attached"
+    assert app.process == 99
+    assert isinstance(main, FakeMain)
 
 
 def test_session_reset_cancels_an_exit_prompt() -> None:

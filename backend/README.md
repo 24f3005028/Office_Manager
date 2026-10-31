@@ -167,15 +167,20 @@ never sent to a prompt that could open Excel.
 
 The shipped `config/busy_ui_profile.json` is a template with `calibrated: false`. The runner
 and API refuse to start until the focus keys, modal titles, format/account/date controls, and
-export controls have been verified live. Calibrate read-only with BUSY open:
+export controls have been verified live. BUSY is discovered with `EnumWindows` and
+`QueryFullProcessImageNameW`, then attached by window handle; no WMI query or pywinauto path
+scan is used. Defaults are `C:\BusyWin\Busy21.exe` and `^Busy\s+21\s+Rel\b`. Calibrate
+read-only with BUSY open:
 
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe scripts\inspect_busy_ui.py --watch --controls
 ```
 
-Navigate to Account Ledger manually, copy the observed selectors into the profile, then set
-`calibrated: true`. The optional test export below does not contact Google Sheets:
+If auto-discovery misses the window, use `--pid <pid>`, `--handle 0x<hwnd>`, or
+`--backend uia`. Navigate to Account Ledger manually, copy the observed selectors into the
+profile, then set `calibrated: true`. The optional test export below does not contact Google
+Sheets:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/test_pouncha_export.py

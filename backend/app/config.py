@@ -111,11 +111,11 @@ class Settings(BaseSettings):
         default=None, validation_alias="PDF_DATE_MAX_DATE"
     )
     busy_executable_path: Path = Field(
-        default=Path(r"E:\C N 26-27\BusyWin\Busy21.exe"),
+        default=Path(r"C:\BusyWin\Busy21.exe"),
         validation_alias="BUSY_EXECUTABLE_PATH",
     )
     busy_window_title_re: str = Field(
-        default=r".*BUSY.*", validation_alias="BUSY_WINDOW_TITLE_RE"
+        default=r"^Busy\s+21\s+Rel\b", validation_alias="BUSY_WINDOW_TITLE_RE"
     )
     busy_expected_company_substring: str = Field(
         default="H.S. Traders", validation_alias="BUSY_EXPECTED_COMPANY_SUBSTRING"

@@ -15,6 +15,7 @@ import re
 import sys
 import time
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -73,42 +74,229 @@ def title_matches(pattern: str, title: str) -> bool:
     return re.search(pattern, title, re.IGNORECASE) is not None
 
 
-def busy_window_visible(title_re: str) -> bool:
-    """Return whether a visible top-level window matches the BUSY title regex.
+@dataclass(frozen=True, slots=True)
+class BusyWindowInfo:
+    """A visible top-level window discovered through the Win32 API."""
 
-    This is a read-only probe used by the scheduler to skip catch-up runs
-    quietly while BUSY is closed. It never attaches to or starts BUSY.
-    """
+    handle: int
+    pid: int
+    title: str
+    class_name: str
+    executable_path: str | None
+    width: int
+    height: int
+
+    @property
+    def area(self) -> int:
+        return self.width * self.height
+
+
+def _visible_top_level_windows() -> list[BusyWindowInfo]:
+    """Enumerate visible top-level windows without WMI or pywinauto scans."""
 
     if sys.platform != "win32":
-        return False
+        return []
     try:
         import ctypes
         from ctypes import wintypes
 
-        user32 = ctypes.windll.user32
-        found = False
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        user32.EnumWindows.argtypes = [
+            ctypes.WINFUNCTYPE(
+                wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+            ),
+            wintypes.LPARAM,
+        ]
+        user32.EnumWindows.restype = wintypes.BOOL
+        user32.IsWindowVisible.argtypes = [wintypes.HWND]
+        user32.IsWindowVisible.restype = wintypes.BOOL
+        user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+        user32.GetWindowTextLengthW.restype = ctypes.c_int
+        user32.GetWindowTextW.argtypes = [
+            wintypes.HWND,
+            wintypes.LPWSTR,
+            ctypes.c_int,
+        ]
+        user32.GetWindowTextW.restype = ctypes.c_int
+        user32.GetClassNameW.argtypes = [
+            wintypes.HWND,
+            wintypes.LPWSTR,
+            ctypes.c_int,
+        ]
+        user32.GetClassNameW.restype = ctypes.c_int
+        user32.GetWindowThreadProcessId.argtypes = [
+            wintypes.HWND,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+        user32.GetWindowRect.argtypes = [
+            wintypes.HWND,
+            ctypes.POINTER(wintypes.RECT),
+        ]
+        user32.GetWindowRect.restype = wintypes.BOOL
+        kernel32.OpenProcess.argtypes = [
+            wintypes.DWORD,
+            wintypes.BOOL,
+            wintypes.DWORD,
+        ]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.QueryFullProcessImageNameW.argtypes = [
+            wintypes.HANDLE,
+            wintypes.DWORD,
+            wintypes.LPWSTR,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
 
-        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)  # type: ignore[untyped-decorator]
+        process_paths: dict[int, str | None] = {}
+
+        def process_path(pid: int) -> str | None:
+            if pid in process_paths:
+                return process_paths[pid]
+            path: str | None = None
+            handle = kernel32.OpenProcess(0x1000, False, pid)
+            if handle:
+                try:
+                    size = wintypes.DWORD(32768)
+                    buffer = ctypes.create_unicode_buffer(size.value)
+                    if kernel32.QueryFullProcessImageNameW(
+                        handle, 0, buffer, ctypes.byref(size)
+                    ):
+                        path = buffer.value
+                finally:
+                    kernel32.CloseHandle(handle)
+            process_paths[pid] = path
+            return path
+
+        windows: list[BusyWindowInfo] = []
+
+        @ctypes.WINFUNCTYPE(  # type: ignore[untyped-decorator]
+            wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+        )
         def _callback(hwnd: int, _lparam: int) -> bool:
-            nonlocal found
             if not user32.IsWindowVisible(hwnd):
                 return True
             length = user32.GetWindowTextLengthW(hwnd)
             if length <= 0:
                 return True
-            buffer = ctypes.create_unicode_buffer(length + 1)
-            user32.GetWindowTextW(hwnd, buffer, length + 1)
-            if title_matches(title_re, buffer.value):
-                found = True
-                return False
+            title_buffer = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, title_buffer, length + 1)
+            rectangle = wintypes.RECT()
+            if not user32.GetWindowRect(hwnd, ctypes.byref(rectangle)):
+                return True
+            width = rectangle.right - rectangle.left
+            height = rectangle.bottom - rectangle.top
+            if width <= 0 or height <= 0:
+                return True
+            class_buffer = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, class_buffer, 256)
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            windows.append(
+                BusyWindowInfo(
+                    handle=int(hwnd),
+                    pid=int(pid.value),
+                    title=title_buffer.value,
+                    class_name=class_buffer.value,
+                    executable_path=process_path(int(pid.value)),
+                    width=width,
+                    height=height,
+                )
+            )
             return True
 
         user32.EnumWindows(_callback, 0)
-        return found
+        return windows
     except Exception as exc:  # pragma: no cover - Windows API failure
-        logger.debug("Could not probe for the BUSY window: %s", exc)
-        return False
+        logger.debug("Could not enumerate the BUSY windows: %s", exc)
+        return []
+
+
+def find_busy_window(
+    *,
+    title_re: str,
+    executable_path: Path | None = None,
+    pid: int | None = None,
+    handle: int | None = None,
+) -> BusyWindowInfo | None:
+    """Find the visible BUSY window by handle, PID, title, or executable path.
+
+    The executable path is compared with ``QueryFullProcessImageNameW`` from a
+    direct process handle, so discovery does not perform a WMI query or a slow
+    pywinauto path scan. When both a title and a path are supplied, a window
+    matching both wins; a title-only or path-only match is still accepted so a
+    changed window title or a moved executable does not break attachment.
+    """
+
+    windows = _visible_top_level_windows()
+    if handle is not None:
+        return next(
+            (window for window in windows if window.handle == int(handle)), None
+        )
+
+    target_path = (
+        str(executable_path).casefold() if executable_path is not None else None
+    )
+    if not title_re and target_path is None and pid is None:
+        return None
+
+    ranked: list[tuple[tuple[int, int, int], BusyWindowInfo]] = []
+    for window in windows:
+        if pid is not None and window.pid != pid:
+            continue
+        title_ok = bool(title_re) and title_matches(title_re, window.title)
+        path_ok = bool(target_path) and (
+            window.executable_path is not None
+            and window.executable_path.casefold() == target_path
+        )
+        if pid is None and not title_ok and not path_ok:
+            continue
+        rank = (
+            1 if title_ok and path_ok else 0,
+            1 if title_ok else 0,
+            window.area,
+        )
+        ranked.append((rank, window))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    return ranked[0][1]
+
+
+def _busy_window_summary() -> str:
+    windows = _visible_top_level_windows()
+    interesting = [
+        window
+        for window in windows
+        if "busy" in window.class_name.casefold()
+        or "busy" in window.title.casefold()
+    ]
+    if not interesting:
+        return "No visible BUSY window was found."
+    return "; ".join(
+        f"{window.title!r} pid={window.pid} class={window.class_name}"
+        for window in interesting[:8]
+    )
+
+
+def busy_window_visible(
+    title_re: str, executable_path: Path | None = None
+) -> bool:
+    """Return whether a visible top-level window matches BUSY.
+
+    This is a read-only probe used by the scheduler to skip catch-up runs
+    quietly while BUSY is closed. It never attaches to or starts BUSY.
+    """
+
+    return (
+        find_busy_window(
+            title_re=title_re, executable_path=executable_path
+        )
+        is not None
+    )
 
 
 class BusySessionProtocol(Protocol):
@@ -185,11 +373,18 @@ class BusySession:
         profile: BusyUiProfile,
         timeout: float,
         require_company: bool = True,
+        pid: int | None = None,
+        handle: int | None = None,
+        backend: str | None = None,
     ) -> BusySession:
         """Attach to an already-running BUSY 21 process.
 
         BUSY is never started automatically: starting a second instance could
-        open a different company or create a second data lock.
+        open a different company or create a second data lock. The window is
+        discovered with a direct Win32 enumeration and attached by handle, so
+        a moved executable or the double space in ``Busy 21  Rel`` does not
+        break the connection. ``pid``, ``handle``, and ``backend`` are
+        diagnostic overrides for live calibration.
         """
 
         if sys.platform != "win32":
@@ -197,16 +392,23 @@ class BusySession:
                 "BUSY desktop automation is only available on Windows."
             )
         try:
-            from pywinauto import Application, Desktop  # type: ignore[import-untyped]
+            from pywinauto import Application  # type: ignore[import-untyped]
             from pywinauto.keyboard import send_keys  # type: ignore[import-untyped]
         except ImportError as exc:  # pragma: no cover - Windows-only dependency
             raise BusyNotRunningError(
                 "pywinauto is not installed. Install the Windows backend dependencies."
             ) from exc
 
-        app = _connect(Application, Desktop, executable_path, title_re, timeout)
+        app, main = _connect(
+            Application,
+            executable_path,
+            title_re,
+            timeout,
+            pid=pid,
+            handle=handle,
+            backend=backend,
+        )
         try:
-            main = app.window(title_re=title_re, timeout=timeout)
             main.wait("visible", timeout=timeout)
         except Exception as exc:
             raise BusyNotRunningError(
@@ -360,11 +562,27 @@ class BusySession:
 
         dialogs: list[Any] = []
         seen: set[int] = set()
+        main_handle = self.window_handle(self._main)
+        process_id = getattr(self._app, "process", None)
+        if isinstance(process_id, int):
+            for record in _visible_top_level_windows():
+                if record.pid != process_id or record.handle == main_handle:
+                    continue
+                if record.class_name in _IGNORED_WINDOW_CLASSES:
+                    continue
+                if not record.title.strip() or record.handle in seen:
+                    continue
+                try:
+                    window = self._app.window(handle=record.handle)
+                except Exception:
+                    continue
+                seen.add(record.handle)
+                dialogs.append(window)
+            return dialogs
         try:
             windows = self._app.windows()
         except Exception:
             return dialogs
-        main_handle = self.window_handle(self._main)
         for window in windows:
             handle = self.window_handle(window)
             if handle in seen or handle == main_handle:
@@ -375,6 +593,15 @@ class BusySession:
                 class_name = str(window.class_name())
                 title = self.window_title(window)
             except Exception:
+                continue
+            try:
+                rectangle = window.rectangle()
+            except Exception:
+                rectangle = None
+            if rectangle is not None and (
+                rectangle.right <= rectangle.left
+                or rectangle.bottom <= rectangle.top
+            ):
                 continue
             if not title.strip() or class_name in _IGNORED_WINDOW_CLASSES:
                 continue
@@ -666,27 +893,52 @@ def _safe_title(window: Any) -> str:
 
 def _connect(
     application_cls: Any,
-    desktop_cls: Any,
     executable_path: Path,
     title_re: str,
     timeout: float,
-) -> Any:
+    *,
+    pid: int | None = None,
+    handle: int | None = None,
+    backend: str | None = None,
+) -> tuple[Any, Any]:
+    window = find_busy_window(
+        title_re=title_re,
+        executable_path=executable_path,
+        pid=pid,
+        handle=handle,
+    )
+    if window is None:
+        raise BusyNotRunningError(
+            f"Could not find BUSY at {executable_path} matching {title_re!r}. "
+            "Start BUSY 21, open the expected company, and try again. "
+            f"Visible BUSY windows: {_busy_window_summary()}"
+        )
+
+    backends = [backend] if backend else ["win32", "uia"]
     errors: list[str] = []
-    try:
-        return application_cls(backend="win32").connect(
-            path=str(executable_path), timeout=timeout
-        )
-    except Exception as exc:
-        errors.append(str(exc))
-    try:
-        window = desktop_cls(backend="win32").window(title_re=title_re)
-        return application_cls(backend="win32").connect(
-            handle=window.handle, timeout=timeout
-        )
-    except Exception as exc:
-        errors.append(str(exc))
+    for backend_name in backends:
+        try:
+            app = application_cls(backend=backend_name).connect(
+                handle=window.handle, timeout=timeout
+            )
+            main = app.window(handle=window.handle)
+            main.wait("visible", timeout=timeout)
+            return app, main
+        except Exception as exc:
+            errors.append(f"{backend_name} handle {window.handle}: {exc}")
+    for backend_name in backends:
+        try:
+            app = application_cls(backend=backend_name).connect(
+                process=window.pid, timeout=timeout
+            )
+            main = app.window(handle=window.handle)
+            main.wait("visible", timeout=timeout)
+            return app, main
+        except Exception as exc:
+            errors.append(f"{backend_name} process {window.pid}: {exc}")
+
     raise BusyNotRunningError(
-        f"Could not attach to BUSY at {executable_path}. Start BUSY 21, open the "
-        f"expected company, and try again. ({'; '.join(errors)})"
+        f"Found the BUSY window {window.title!r} (pid {window.pid}), but could "
+        f"not attach to it. ({'; '.join(errors)})"
     )
 

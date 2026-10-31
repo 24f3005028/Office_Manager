@@ -241,6 +241,24 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Attach timeout in seconds (default: BUSY_AUTOMATION_TIMEOUT_SECONDS).",
     )
     parser.add_argument(
+        "--pid",
+        type=int,
+        default=None,
+        help="Attach to this BUSY process ID instead of discovering it by path.",
+    )
+    parser.add_argument(
+        "--handle",
+        type=lambda value: int(value, 0),
+        default=None,
+        help="Attach to this top-level window handle (decimal or 0x-prefixed).",
+    )
+    parser.add_argument(
+        "--backend",
+        choices=("win32", "uia"),
+        default=None,
+        help="Force one pywinauto backend; the default tries win32 then uia.",
+    )
+    parser.add_argument(
         "--require-company",
         action="store_true",
         help="Fail if the main window title does not contain the expected company.",
@@ -303,6 +321,9 @@ def main(argv: list[str] | None = None) -> int:
             profile=profile,
             timeout=timeout,
             require_company=False,
+            pid=args.pid,
+            handle=args.handle,
+            backend=args.backend,
         )
     except BusyAutomationError as exc:
         print(f"Could not attach to BUSY: {exc}", file=sys.stderr)
@@ -324,6 +345,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Profile: {profile_path}")
         print(f"Executable: {executable}")
         print(f"Expected company: {company!r}")
+        print(
+            "Attached: "
+            f"handle={session.window_handle(session.main_window)} "
+            f"title={session.window_title(session.main_window)!r}"
+        )
         if args.watch:
             try:
                 while True:
