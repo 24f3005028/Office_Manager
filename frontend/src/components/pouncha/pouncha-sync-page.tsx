@@ -187,18 +187,25 @@ export function PounchaSyncPage() {
   }
 
   const configured = Boolean(status?.configured);
+  const uploadConfigured = Boolean(status?.upload_configured);
   const active = isActive(status?.active_run);
   const waitingForBusy = Boolean(status?.scheduler.waiting_for_busy);
   const lastSuccess = status?.recent_runs.find((run) => run.status === "success");
   const recentRuns = status?.recent_runs.slice(0, 5) ?? [];
 
-  const badge = !configured
-    ? { tone: "warning", label: "Setup required" }
-    : waitingForBusy
-      ? { tone: "warning", label: "Waiting for BUSY 21" }
-      : active
-        ? { tone: "neutral", label: "Sync running" }
-        : { tone: "success", label: "Ready" };
+  const badge = !status?.sync_enabled
+    ? { tone: "warning", label: "Sync disabled" }
+    : !status.sheets_configured
+      ? { tone: "warning", label: "Setup required" }
+      : !status.busy_configured
+        ? { tone: "warning", label: "BUSY automation unavailable" }
+        : !status.busy_calibrated
+          ? { tone: "warning", label: "Calibration required" }
+          : waitingForBusy
+            ? { tone: "warning", label: "Waiting for BUSY 21" }
+            : active
+              ? { tone: "neutral", label: "Sync running" }
+              : { tone: "success", label: "Ready" };
 
   return (
     <AppShell>
@@ -356,7 +363,11 @@ export function PounchaSyncPage() {
               </button>
               {!configured && (
                 <p className="pouncha-hint">
-                  Configure Google Sheets above to enable the manual sync.
+                  {!status?.sheets_configured
+                    ? "Configure Google Sheets above to enable the manual sync."
+                    : !status.busy_calibrated
+                      ? "Calibrate the Account Ledger Sales recipe before syncing from BUSY."
+                      : "Pouncha sync is not enabled."}
                 </p>
               )}
             </div>
@@ -376,7 +387,7 @@ export function PounchaSyncPage() {
                   ref={fileInputRef}
                   type="file"
                   accept=".xlsx,.xlsm"
-                  disabled={!configured || uploading}
+                  disabled={!uploadConfigured || uploading}
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     if (file) void upload(file);

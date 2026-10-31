@@ -71,6 +71,10 @@ The API is available under `/api`. Useful endpoints include:
 - `GET /api/settings`, `PUT /api/settings/document-roots`, and `POST /api/settings/pick-folder`
 - `POST /api/busy-ledger/import` (multipart: optional `file`, `category`, `dry_run`)
 - `GET /api/busy-ledger/status`
+- `GET /api/pouncha-sync/status`
+- `POST /api/pouncha-sync/run` (`202` queued run; poll the run or status endpoint)
+- `GET /api/pouncha-sync/runs/{run_id}`
+- `POST /api/pouncha-sync/upload-excel` (multipart `.xlsx`/`.xlsm` upload)
 
 Create a send job with a JSON body such as:
 
@@ -138,6 +142,86 @@ date with `date_source: "file_fallback"` and an amber **File Date (Unverified)**
 row may back only one distinct PDF; a second PDF claiming the same row makes both ambiguous
 instead of silently reusing a date. `GET /api/busy-ledger/status` reports the last sync, indexed
 totals and per-category date ranges.
+
+## BUSY desktop automation
+
+`backend/app/domains/busy_automation/` drives an already-running BUSY 21 Rel 14.2 window. It
+never starts BUSY, never closes BUSY, never opens BUSY databases, and never kills
+`EXCEL.EXE`. The shared `BusyExportRunner` performs the same sequence for both the ledger
+import and the Pouncha sync:
+
+1. Acquire the cross-process BUSY lock and the in-process reentrant guard.
+2. Wait until the Windows desktop has been idle for `BUSY_MIN_USER_IDLE_SECONDS`.
+3. Attach to the existing BUSY window and verify the company title.
+4. Reset to the main menu, open the recipe, fill the filter form, and export.
+5. Hand the workbook to a consumer, reset to the main menu, and close the session.
+6. Delete the temporary workbook in `finally`, even when parsing fails.
+
+Recipes exist for `Account Ledger - Sales` (bills), `Account Ledger - Sales Return` (credit
+notes), and `Purchase Return` (debit notes). The ledgers use the `BAGS` format,
+`DD-MM-YYYY` dates, and `Y` for transport details and bill references. The export dialog uses
+`Microsoft Excel`; the filename is entered without `.xlsx` because BUSY appends it. The
+exporter polls the extensionless name plus `.xlsx`, `.xlsm`, and `.xls`, then validates the
+actual workbook. The post-export "open file" prompt is answered with `N` or `{ESC}`; Enter is
+never sent to a prompt that could open Excel.
+
+The shipped `config/busy_ui_profile.json` is a template with `calibrated: false`. The runner
+and API refuse to start until the focus keys, modal titles, format/account/date controls, and
+export controls have been verified live. Calibrate read-only with BUSY open:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe scripts\inspect_busy_ui.py --watch --controls
+```
+
+Navigate to Account Ledger manually, copy the observed selectors into the profile, then set
+`calibrated: true`. The optional test export below does not contact Google Sheets:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/test_pouncha_export.py
+```
+
+It writes an inspection copy under `data/pouncha_calibration/` and prints the parsed bills.
+
+## Pouncha daily Google Sheets sync
+
+`app/domains/pouncha_sync/` appends new BUSY Sale bills to the headerless
+`POUNCHA 26-27` worksheet. The worksheet is verified by name; no header row is required or
+created. Existing voucher numbers are read from Column B starting at Row 1. New rows are
+appended to Columns A:G only:
+
+```text
+A Date | B Vch/Bill No | C Account | D Transport | E Vehicle No | F Station | G Order No
+```
+
+Column H and any other columns are never read, rewritten, or cleared. Existing bill numbers
+are deduplicated with the same canonical `(series, financial year, serial)` key used by the
+ledger importer. Rows are sorted by date, `HST` before `HST/L`, then serial.
+
+Configuration:
+
+- `POUNCHA_SPREADSHEET_ID` and `GOOGLE_SERVICE_ACCOUNT_FILE` enable Sheets. The service
+  account JSON is git-ignored and must be shared as **Editor** with the spreadsheet.
+- `POUNCHA_SHEET_TAB_NAME` defaults to `POUNCHA 26-27`.
+- `POUNCHA_SYNC_ENABLED=false` disables the scheduler and both manual paths.
+- `POUNCHA_SYNC_LOOKBACK_DAYS` defaults to 3; the default window is `today - 3` through
+  `today` in `POUNCHA_TIMEZONE` (default `Asia/Kolkata`).
+- `POUNCHA_CATCHUP_INTERVAL_MINUTES` defaults to 15.
+- `POUNCHA_LOCAL_EXCEL_PATH` enables an optional local archive. Empty disables it. The archive
+  preserves existing rows and extra columns, appends only new vouchers, and writes atomically.
+- `POUNCHA_UPLOAD_DIR` holds temporary uploads; they are deleted in `finally`.
+- `POUNCHA_LOCK_PATH` serializes scheduler, manual, and upload runs.
+
+The scheduler starts at 00:00 IST. On startup and every catch-up interval it checks whether a
+successful run completed since local midnight. It skips quietly when BUSY is closed, when
+Sheets is not configured, when the recipe is uncalibrated, or when a run is already active;
+only real runs create audit rows. Audit rows live in `pouncha_sync_runs`, and rows left
+`queued`/`running` by a restart are marked failed.
+
+`POST /api/pouncha-sync/run` validates configuration, creates the audit row, and returns
+`202 {run_id, status}`; the worker drives BUSY in a thread and the client polls. Uploads are
+synchronous and return the completed run. Configuration errors return `503`, invalid dates or
+workbooks `400`, and Sheets API failures `502`.
 
 ## Bridge contract and readiness
 
@@ -215,8 +299,8 @@ From `backend/`:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
-.\.venv\Scripts\ruff.exe check app tests
-.\.venv\Scripts\mypy.exe app
+.\.venv\Scripts\ruff.exe check app tests scripts
+.\.venv\Scripts\mypy.exe app scripts
 ```
 
 The suite disables dotenv loading, clears application setting environment variables, confines

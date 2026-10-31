@@ -4,7 +4,7 @@ Use this after calibrating ``config/busy_ui_profile.json`` and before enabling
 the daily scheduler:
 
     .\\.venv\\Scripts\\python.exe scripts/test_pouncha_export.py
-    .\\.venv\\Scripts\\python.exe scripts/test_pouncha_export.py --keep-dir data\calibration
+    .\\.venv\\Scripts\\python.exe scripts/test_pouncha_export.py --keep-dir data\pouncha_calibration
 
 The script drives the same guarded BUSY export as the Pouncha sync, copies the
 temporary workbook to ``--keep-dir`` for inspection, and parses it with the

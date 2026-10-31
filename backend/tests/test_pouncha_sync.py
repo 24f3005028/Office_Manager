@@ -6,6 +6,7 @@ import asyncio
 import time
 from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -35,6 +36,7 @@ from app.domains.pouncha_sync.scheduler import (
     start_of_today,
 )
 from app.domains.pouncha_sync.service import (
+    PounchaNotConfiguredError,
     PounchaSyncService,
     create_pouncha_sync_service,
 )
@@ -114,6 +116,11 @@ class FakeSheets:
         return len(rows)
 
 
+class FailingSheets(FakeSheets):
+    def append_rows(self, rows: list[list[str]]) -> int:
+        raise PounchaSheetError("Sheets append failed")
+
+
 class FakeWorksheet:
     def __init__(self, values: list[str]) -> None:
         self.values = values
@@ -129,6 +136,8 @@ class FakeWorksheet:
 
 
 class FakeExporter:
+    calibrated = True
+
     def __init__(
         self,
         parsed: ParsedPounchaWorkbook | None = None,
@@ -206,6 +215,35 @@ def test_parser_reads_sale_rows_with_details(tmp_path: Path) -> None:
     assert second.voucher_no == "HST/L/26-27/42"
     assert second.order_no == ""
     assert second.transport == "COURIER"
+
+
+def test_parser_extracts_the_known_account_ledger_bills(tmp_path: Path) -> None:
+    rows = [
+        *PREAMBLE,
+        HEADER,
+        [date(2026, 10, 29), "Sale", "HST/26-27/1154", "TEMPU YUDHA", 1000, 0],
+        [None, None, None, "HS-1157  0  0  0"],
+        [None, None, None, "TRANSPORT : A-LOCAL"],
+        [None, None, None, "VEHICLE NO. : PB35Q6612"],
+        [None, None, None, "STATION : Amritsar"],
+        [date(2026, 10, 29), "Sale", "HST/26-27/1163", "ABC TEXTILES", 1000, 0],
+        [None, None, None, "TRANSPORT : A-LOCAL"],
+        [None, None, None, "TOTAL"],
+    ]
+    path = write_ledger(tmp_path / "ledger.xlsx", rows)
+
+    records = parse_pouncha_sales_workbook(path).records
+
+    first, second = records
+    assert first.voucher_no == "HST/26-27/1154"
+    assert first.account == "TEMPU YUDHA"
+    assert first.order_no == "HS-1157"
+    assert first.transport == "A-LOCAL"
+    assert first.vehicle_no == "PB35Q6612"
+    assert first.station == "AMRITSAR"
+    assert second.voucher_no == "HST/26-27/1163"
+    assert second.order_no == ""
+    assert second.transport == "A-LOCAL"
 
 
 def test_parser_ignores_non_sale_rows_and_totals(tmp_path: Path) -> None:
@@ -462,6 +500,40 @@ def test_google_sheets_client_requires_configuration() -> None:
     assert client.configured is False
     with pytest.raises(PounchaSheetError, match="not configured"):
         client.existing_voucher_keys()
+
+
+def test_google_sheets_client_shares_service_account_email_on_permission_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import gspread
+    from google.oauth2.service_account import Credentials
+
+    credentials = SimpleNamespace(
+        service_account_email="sync@example.iam.gserviceaccount.com",
+    )
+    monkeypatch.setattr(
+        Credentials,
+        "from_service_account_file",
+        lambda *args, **kwargs: credentials,
+    )
+
+    class ForbiddenClient:
+        def open_by_key(self, key: str) -> None:
+            raise RuntimeError("[403]: The caller does not have permission")
+
+    monkeypatch.setattr(gspread, "authorize", lambda creds: ForbiddenClient())
+    client = GoogleSheetsClient(
+        spreadsheet_id="sheet-id",
+        tab_name="POUNCHA 26-27",
+        service_account_file="service-account.json",
+    )
+
+    with pytest.raises(PounchaSheetError) as error:
+        client.existing_voucher_keys()
+
+    message = str(error.value)
+    assert "sync@example.iam.gserviceaccount.com" in message
+    assert "[403]: The caller does not have permission" in message
 
 
 def test_write_pouncha_archive_keeps_the_same_a_to_g_schema(
@@ -727,6 +799,137 @@ def test_service_upload_appends_only_new_rows_and_archives(
     assert archive.is_file()
 
 
+def test_service_upload_deletes_the_temp_file_when_parsing_fails(
+    tmp_path: Path,
+) -> None:
+    service = make_service(tmp_path)
+
+    with pytest.raises(PounchaParseError):
+        service.run_upload(
+            filename="broken.xlsx",
+            contents=b"this is not an Excel workbook",
+        )
+
+    run = service.repository.last_run()
+    assert run is not None
+    assert run.status == "failed"
+    assert not list((tmp_path / "uploads").glob("*"))
+
+
+def test_service_cleans_up_and_records_a_sheets_append_failure(
+    tmp_path: Path,
+) -> None:
+    path = write_ledger(tmp_path / "ledger.xlsx", standard_rows())
+    archive = tmp_path / "Pouncha_Sales.xlsx"
+    service = make_service(
+        tmp_path,
+        sheets=FailingSheets(),
+        pouncha_local_excel_path=archive,
+    )
+
+    with pytest.raises(PounchaSheetError, match="append failed"):
+        service.run_upload(
+            filename="ledger.xlsx",
+            contents=path.read_bytes(),
+            start_date=date(2026, 10, 25),
+            end_date=date(2026, 10, 27),
+        )
+
+    run = service.repository.last_run()
+    assert run is not None
+    assert run.status == "failed"
+    assert run.error_message == "Sheets append failed"
+    assert run.appended_count == 0
+    assert not list((tmp_path / "uploads").glob("*"))
+    assert archive.is_file()
+
+
+def test_service_keeps_success_and_reports_an_archive_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = write_ledger(tmp_path / "ledger.xlsx", standard_rows())
+    service = make_service(
+        tmp_path,
+        pouncha_local_excel_path=tmp_path / "Pouncha_Sales.xlsx",
+    )
+
+    def fail_archive(*args: Any, **kwargs: Any) -> Path:
+        raise OSError("archive is locked")
+
+    monkeypatch.setattr(
+        "app.domains.pouncha_sync.service.write_pouncha_archive",
+        fail_archive,
+    )
+
+    run = service.run_upload(
+        filename="ledger.xlsx",
+        contents=path.read_bytes(),
+        start_date=date(2026, 10, 25),
+        end_date=date(2026, 10, 27),
+    )
+
+    assert run.status == "success"
+    assert run.appended_count == 2
+    assert any(
+        warning.startswith("Local archive could not be written")
+        for warning in run.warnings
+    )
+    assert not list((tmp_path / "uploads").glob("*"))
+
+
+def test_upload_fallback_does_not_require_busy_automation(
+    tmp_path: Path,
+) -> None:
+    path = write_ledger(tmp_path / "ledger.xlsx", standard_rows())
+    service = PounchaSyncService(
+        settings=make_settings(tmp_path),
+        repository=make_repository(tmp_path),
+        sheets_client=FakeSheets(),
+        exporter=None,
+        busy_available=lambda: False,
+        now=lambda: NOW,
+    )
+
+    assert service.configured is False
+    assert service.upload_configured is True
+
+    run = service.run_upload(
+        filename="ledger.xlsx",
+        contents=path.read_bytes(),
+        start_date=date(2026, 10, 25),
+        end_date=date(2026, 10, 27),
+    )
+
+    assert run.status == "success"
+    assert run.appended_count == 2
+
+
+def test_uncalibrated_busy_recipe_blocks_busy_sync_but_not_upload(
+    tmp_path: Path,
+) -> None:
+    class UncalibratedExporter(FakeExporter):
+        calibrated = False
+
+    path = write_ledger(tmp_path / "ledger.xlsx", standard_rows())
+    service = make_service(tmp_path, exporter=UncalibratedExporter())
+
+    assert service.configured is False
+    assert service.busy_configured is True
+    assert service.busy_calibrated is False
+    assert service.upload_configured is True
+    with pytest.raises(PounchaNotConfiguredError, match="not calibrated"):
+        service.queue_busy_run()
+
+    run = service.run_upload(
+        filename="ledger.xlsx",
+        contents=path.read_bytes(),
+        start_date=date(2026, 10, 25),
+        end_date=date(2026, 10, 27),
+    )
+
+    assert run.status == "success"
+
+
 def test_service_busy_run_marks_skipped_when_busy_is_closed(
     tmp_path: Path,
 ) -> None:
@@ -864,6 +1067,8 @@ def test_api_status_and_manual_run_reaches_success(tmp_path: Path) -> None:
         status = client.get("/api/pouncha-sync/status")
         assert status.status_code == 200
         assert status.json()["configured"] is True
+        assert status.json()["upload_configured"] is True
+        assert status.json()["busy_calibrated"] is True
         assert status.json()["scheduler"]["running"] is False
 
         queued = client.post(

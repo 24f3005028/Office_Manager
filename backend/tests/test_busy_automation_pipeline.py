@@ -191,6 +191,14 @@ class FakeSession:
         self.calls.append(("uncheck", control))
         return True
 
+    def set_checkbox(self, spec: dict[str, Any], checked: bool) -> bool:
+        self.calls.append(("set_checkbox", spec, checked))
+        return True
+
+    def select_combo_item(self, spec: dict[str, Any], value: str) -> bool:
+        self.calls.append(("select_combo_item", spec, value))
+        return True
+
     def find_children(
         self, window: Any, spec: dict[str, Any]
     ) -> list[Any]:
@@ -673,6 +681,88 @@ def test_exporter_refuses_an_uncalibrated_format(tmp_path: Path) -> None:
 
     with pytest.raises(BusyExportError, match="Data Format"):
         BusyExporter(profile).export(session, target)
+
+
+def test_exporter_uses_a_calibrated_format_combo(tmp_path: Path) -> None:
+    target = tmp_path / "sales.xlsx"
+    profile = BusyUiProfile()
+    profile.export.format_control = {"class_name": "ComboBox", "control_id": 5}
+    profile.export.format_value = "Microsoft Excel"
+    profile.export.file_stable_sec = 0.0
+    profile.export.file_ready_timeout_sec = 1.0
+    session = ExportFakeSession(target)
+
+    result = BusyExporter(profile, sleep=lambda _: None).export(session, target)
+
+    assert result == target
+    assert (
+        "select_combo_item",
+        profile.export.format_control,
+        "Microsoft Excel",
+    ) in session.calls
+    assert not any(
+        call[0] == "send_keys" and call[1] == profile.export.format_keys
+        for call in session.calls
+    )
+
+
+def test_exporter_polls_the_busy_appended_extension_candidates(
+    tmp_path: Path,
+) -> None:
+    profile = BusyUiProfile()
+    profile.export.append_extension = True
+    exporter = BusyExporter(profile)
+    target = tmp_path / "sales.xlsx"
+
+    candidates = exporter._candidate_paths(exporter._entry_path(target))
+
+    assert candidates[0] == target
+    assert (tmp_path / "sales") in candidates
+    assert (tmp_path / "sales.xlsm") in candidates
+    assert (tmp_path / "sales.xls") in candidates
+    assert exporter._entry_path(target) == tmp_path / "sales"
+
+
+def test_exporter_prefers_the_xlsx_candidate_over_an_extensionless_file(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "sales.xlsx"
+    make_workbook(target)
+    extensionless = target.with_suffix("")
+    make_workbook(extensionless)
+    profile = BusyUiProfile()
+    profile.export.append_extension = True
+    profile.export.file_stable_sec = 0.0
+    exporter = BusyExporter(profile, sleep=lambda _: None)
+
+    result = exporter._wait_for_file(
+        FakeSession(),
+        FakeDialog("Export"),
+        exporter._candidate_paths(exporter._entry_path(target)),
+    )
+
+    assert result == target
+
+
+def test_exporter_enters_the_extensionless_name_for_a_busy_export(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "sales.xlsx"
+    profile = BusyUiProfile()
+    profile.export.append_extension = True
+    profile.export.format_keys = "{TAB}"
+    profile.export.file_stable_sec = 0.0
+    profile.export.file_ready_timeout_sec = 1.0
+    session = ExportFakeSession(target)
+
+    result = BusyExporter(profile, sleep=lambda _: None).export(session, target)
+
+    assert result == target
+    assert (
+        "set_control_text",
+        session._children[0],
+        str(tmp_path / "sales"),
+    ) in session.calls
 
 
 def test_exporter_refuses_an_uncalibrated_path(tmp_path: Path) -> None:

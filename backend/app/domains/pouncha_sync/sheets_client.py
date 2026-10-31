@@ -96,17 +96,24 @@ class GoogleSheetsClient:
                 "gspread and google-auth are required for Pouncha sync."
             ) from exc
 
+        service_email: str | None = None
         try:
             credentials = Credentials.from_service_account_file(  # type: ignore[no-untyped-call]
                 self.service_account_file, scopes=[SHEETS_SCOPE]
             )
+            service_email = getattr(credentials, "service_account_email", None)
             client = gspread.authorize(credentials)
             spreadsheet = client.open_by_key(self.spreadsheet_id)
         except Exception as exc:
+            share_hint = (
+                f" Share the sheet with {service_email} as Editor."
+                if service_email
+                else " Share the sheet with the service-account email as Editor."
+            )
             raise PounchaSheetError(
                 "Could not open the Pouncha Google Sheet. Check "
-                "POUNCHA_SPREADSHEET_ID and the service-account JSON: "
-                f"{exc}"
+                "POUNCHA_SPREADSHEET_ID and the service-account JSON."
+                f"{share_hint} ({self._error_detail(exc)})"
             ) from exc
         try:
             self._worksheet = spreadsheet.worksheet(self.tab_name)
@@ -114,9 +121,19 @@ class GoogleSheetsClient:
             raise PounchaSheetError(
                 f"The Google Sheet does not contain a {self.tab_name!r} tab. "
                 "Create or rename the tab; the sync never creates it "
-                f"automatically. ({exc})"
+                f"automatically. ({self._error_detail(exc)})"
             ) from exc
         return self._worksheet
+
+    @staticmethod
+    def _error_detail(exc: BaseException) -> str:
+        detail = str(exc).strip()
+        if detail:
+            return detail
+        cause = exc.__cause__
+        if cause is not None and str(cause).strip():
+            return str(cause).strip()
+        return exc.__class__.__name__
 
 
 def select_new_records(

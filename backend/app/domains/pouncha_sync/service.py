@@ -142,8 +142,15 @@ class PounchaSyncService:
         return (
             self.settings.pouncha_sync_enabled
             and self.exporter is not None
+            and self.busy_calibrated
             and self.sheets_client.configured
         )
+
+    @property
+    def upload_configured(self) -> bool:
+        """The Excel fallback only needs Sheets, not the BUSY desktop."""
+
+        return self.settings.pouncha_sync_enabled and self.sheets_client.configured
 
     @property
     def sheets_configured(self) -> bool:
@@ -152,6 +159,10 @@ class PounchaSyncService:
     @property
     def busy_configured(self) -> bool:
         return self.exporter is not None
+
+    @property
+    def busy_calibrated(self) -> bool:
+        return self.exporter is not None and self.exporter.calibrated
 
     def today(self) -> date:
         return self._now().astimezone(self.timezone).date()
@@ -166,8 +177,10 @@ class PounchaSyncService:
     def status(self) -> PounchaSyncServiceStatus:
         return PounchaSyncServiceStatus(
             configured=self.configured,
+            upload_configured=self.upload_configured,
             sheets_configured=self.sheets_configured,
             busy_configured=self.busy_configured,
+            busy_calibrated=self.busy_calibrated,
             sync_enabled=self.settings.pouncha_sync_enabled,
             last_run=self.repository.last_run(),
             active_run=self.repository.active_run(),
@@ -255,17 +268,22 @@ class PounchaSyncService:
         trigger_type: PounchaTrigger | str,
         skip_when_busy_closed: bool,
     ) -> PounchaSyncRun:
-        if self.exporter is None:
-            raise PounchaNotConfiguredError(
-                "BUSY automation is not configured for Pouncha sync."
-            )
         try:
+            exporter = self.exporter
+            if exporter is None:
+                raise PounchaNotConfiguredError(
+                    "BUSY automation is not configured for Pouncha sync."
+                )
+            if not exporter.calibrated:
+                raise PounchaNotConfiguredError(
+                    "The BUSY Account Ledger Sales recipe is not calibrated."
+                )
             with acquire_busy_lock(
                 self.settings.pouncha_lock_path,
                 self.settings.busy_automation_timeout_seconds,
             ):
                 self.repository.mark_running(run_id)
-                parsed = self.exporter.export_sales(start_date, end_date)
+                parsed = exporter.export_sales(start_date, end_date)
                 return self._finish_success(run_id, parsed)
         except BusyNotRunningError as exc:
             if skip_when_busy_closed:
@@ -292,7 +310,7 @@ class PounchaSyncService:
         start_date: date | None = None,
         end_date: date | None = None,
     ) -> PounchaSyncRun:
-        self._ensure_configured()
+        self._ensure_upload_configured()
         start, end = self._window(start_date, end_date)
         run = self.repository.create_run(
             run_id=uuid.uuid4().hex,
@@ -386,13 +404,23 @@ class PounchaSyncService:
         return completed
 
     def _ensure_configured(self) -> None:
-        if not self.settings.pouncha_sync_enabled:
-            raise PounchaNotConfiguredError(
-                "Pouncha sync is disabled. Set POUNCHA_SYNC_ENABLED=true."
-            )
+        self._ensure_upload_configured()
         if self.exporter is None:
             raise PounchaNotConfiguredError(
                 "BUSY automation is not available for Pouncha sync."
+            )
+        if not self.exporter.calibrated:
+            raise PounchaNotConfiguredError(
+                "The BUSY Account Ledger Sales recipe is not calibrated. Open "
+                "BUSY 21, run scripts/inspect_busy_ui.py --watch --controls, "
+                "fill config/busy_ui_profile.json, and set "
+                "account_ledger_sales.calibrated to true."
+            )
+
+    def _ensure_upload_configured(self) -> None:
+        if not self.settings.pouncha_sync_enabled:
+            raise PounchaNotConfiguredError(
+                "Pouncha sync is disabled. Set POUNCHA_SYNC_ENABLED=true."
             )
         if not self.sheets_client.configured:
             raise PounchaNotConfiguredError(

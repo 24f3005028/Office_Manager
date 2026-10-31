@@ -158,6 +158,29 @@ A Date | B Vch/Bill No | C Account | D Transport | E Vehicle No | F Station | G 
    `backend/.env`.
 5. Leave `POUNCHA_SHEET_TAB_NAME=POUNCHA 26-27` unless the tab was renamed.
 
+The sync never creates the tab or a header row. If the tab is missing, the run fails with an
+actionable error instead of guessing.
+
+### Pouncha environment settings
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `POUNCHA_SPREADSHEET_ID` | empty | Google Sheet ID. Required for any Sheets write. |
+| `POUNCHA_SHEET_TAB_NAME` | `POUNCHA 26-27` | Existing headerless tab name. |
+| `GOOGLE_SERVICE_ACCOUNT_FILE` | `config/google_service_account.json` | Service-account key, relative to `backend/`. |
+| `POUNCHA_LOCAL_EXCEL_PATH` | empty | Optional local archive. Empty disables it. |
+| `POUNCHA_SYNC_ENABLED` | `true` | Master switch for the scheduler, manual BUSY sync, and upload. |
+| `POUNCHA_SYNC_LOOKBACK_DAYS` | `3` | Default window is `today - 3` through `today` IST. |
+| `POUNCHA_CATCHUP_INTERVAL_MINUTES` | `15` | How often the scheduler checks for a missed run. |
+| `POUNCHA_TIMEZONE` | `Asia/Kolkata` | Midnight schedule and audit timestamps. |
+| `POUNCHA_LOCK_PATH` | `data/pouncha_sync.lock` | Serializes scheduler, manual, and upload runs. |
+| `POUNCHA_UPLOAD_DIR` | `data/pouncha_uploads` | Temporary upload storage; files are deleted after parsing. |
+
+The page shows **Calibration required** until
+`account_ledger_sales.calibrated` is `true` in `backend/config/busy_ui_profile.json`. The
+Excel upload fallback is available as soon as Sheets is configured because it does not drive
+the BUSY desktop.
+
 ### Schedule and catch-up
 
 - The scheduler runs every day at **00:00 IST** and exports the window from
@@ -165,22 +188,44 @@ A Date | B Vch/Bill No | C Account | D Transport | E Vehicle No | F Station | G 
 - On backend startup, and every `POUNCHA_CATCHUP_INTERVAL_MINUTES` (15 by default), it checks
   whether a successful run has completed since midnight. If not, it runs the catch-up.
 - If BUSY 21 is closed, catch-up skips quietly and the page shows **Waiting for BUSY 21**;
-  no failed audit row is created.
+  no failed audit row is created. It retries on the next interval.
+- The scheduler does not start a run until Google Sheets is configured and the Account Ledger
+  Sales recipe is calibrated. The page shows the missing step instead.
 - Each run is stored in the `pouncha_sync_runs` table with its trigger, date window, counts,
-  status, warnings, and timestamps.
+  status, warnings, and timestamps. A run left `queued` or `running` by a backend restart is
+  marked failed with `Interrupted by a backend restart`.
+- The scheduler and manual paths share `POUNCHA_LOCK_PATH`, so two syncs cannot append to the
+  same sheet at once.
 
 ### Manual sync and Excel upload
 
 - **Sync Now from BUSY** calls `POST /api/pouncha-sync/run`. The endpoint returns **202** with a
   `run_id`; the page polls `/api/pouncha-sync/status` and `/api/pouncha-sync/runs/{run_id}`.
+  A queued background run creates an audit row immediately and updates it when the export
+  finishes.
 - **Upload sales ledger Excel** accepts an `.xlsx`/`.xlsm` Account Ledger export, runs the same
   parser, deduplication, local archive, and Sheets append, and returns the completed run
-  synchronously. The uploaded file is deleted after parsing.
+  synchronously. The uploaded file is deleted after parsing, including on failure. The upload
+  works even when BUSY is closed, but still requires Google Sheets and `POUNCHA_SYNC_ENABLED`.
 - Existing voucher numbers are deduplicated using the same canonical key as the BUSY ledger
   parser. New rows are sorted by date, `HST` before `HST/L`, then serial.
 - When `POUNCHA_LOCAL_EXCEL_PATH` is set, a copy of every parsed sale row is also written to
-  that local workbook. Set it to an empty value to disable the archive.
+  that local workbook. Set it to an empty value to disable the archive. Archive failures are
+  reported as run warnings and do not roll back a successful Sheets append.
 - The sync never writes to Sheets when there are no new rows and never modifies existing rows.
+  It appends Columns A:G only; Column H remarks are preserved.
+
+### Pouncha API endpoints
+
+| Method | Path | Behavior |
+|---|---|---|
+| `GET` | `/api/pouncha-sync/status` | Scheduler state, configuration flags, last run, active run, and last 10 audit rows. |
+| `POST` | `/api/pouncha-sync/run` | Queue a BUSY export. Returns `202 {run_id, status}`; rejects a second active run with `409`. |
+| `GET` | `/api/pouncha-sync/runs/{run_id}` | Poll one audit row. |
+| `POST` | `/api/pouncha-sync/upload-excel` | Multipart `.xlsx`/`.xlsm` upload; parses and appends synchronously. |
+
+Configuration errors return `503`; invalid dates or workbooks return `400`; Sheets API failures
+return `502`.
 
 ## Startup and WhatsApp readiness
 

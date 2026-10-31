@@ -142,8 +142,10 @@ class PounchaSchedulerStatusResponse(BaseModel):
 
 class PounchaSyncStatusResponse(BaseModel):
     configured: bool
+    upload_configured: bool
     sheets_configured: bool
     busy_configured: bool
+    busy_calibrated: bool
     sync_enabled: bool
     scheduler: PounchaSchedulerStatusResponse
     last_run: PounchaSyncRunResponse | None

@@ -6,7 +6,11 @@ from pathlib import Path
 import pytest
 from app.config import Settings
 from app.db import Database
-from app.domains.busy_ledger.parser import BusyLedgerError, parse_voucher_date
+from app.domains.busy_ledger.parser import (
+    BusyLedgerError,
+    infer_category,
+    parse_voucher_date,
+)
 from app.domains.busy_ledger.repository import BusyLedgerRepository
 from app.domains.busy_ledger.service import BusyLedgerService
 from app.main import create_app
@@ -160,6 +164,57 @@ def test_voucher_date_parser_supports_serials_and_common_string_formats() -> Non
     assert parse_voucher_date("25-Oct-2026") == date(2026, 10, 25)
     assert parse_voucher_date("5-Apr-26") == date(2026, 4, 5)
     assert parse_voucher_date("not a date") is None
+
+
+@pytest.mark.parametrize(
+    "voucher_type",
+    ["SaleReturn", "Sale Return", "Sales Return", "SlRt", "Slrt"],
+)
+def test_infer_category_maps_sale_return_types_to_credit_notes(
+    voucher_type: str,
+) -> None:
+    assert (
+        infer_category(
+            category_hint=None,
+            voucher_type=voucher_type,
+            party="ABC TEXTILES",
+            preamble="",
+            series="HST",
+        )
+        == "credit_notes"
+    )
+
+
+@pytest.mark.parametrize(
+    "voucher_type",
+    ["Purchase return", "Purchase Return", "PrRt", "Prrt", "PurcReturn"],
+)
+def test_infer_category_maps_purchase_return_types_to_debit_notes(
+    voucher_type: str,
+) -> None:
+    assert (
+        infer_category(
+            category_hint=None,
+            voucher_type=voucher_type,
+            party="SUPPLIER",
+            preamble="",
+            series="HST",
+        )
+        == "debit_notes"
+    )
+
+
+def test_infer_category_keeps_the_explicit_category_hint() -> None:
+    assert (
+        infer_category(
+            category_hint="bills",
+            voucher_type="SaleReturn",
+            party="ABC TEXTILES",
+            preamble="Credit Note Register",
+            series="CN",
+        )
+        == "bills"
+    )
 
 
 def test_import_endpoint_accepts_an_upload_and_reports_status(tmp_path: Path) -> None:

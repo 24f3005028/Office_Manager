@@ -100,8 +100,10 @@ def pouncha_status(request: Request) -> PounchaSyncStatusResponse:
     service_status = service.status()
     return PounchaSyncStatusResponse(
         configured=service_status.configured,
+        upload_configured=service_status.upload_configured,
         sheets_configured=service_status.sheets_configured,
         busy_configured=service_status.busy_configured,
+        busy_calibrated=service_status.busy_calibrated,
         sync_enabled=service_status.sync_enabled,
         scheduler=_scheduler_response(
             scheduler.status() if scheduler is not None else None

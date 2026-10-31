@@ -172,8 +172,10 @@ export interface PounchaSchedulerStatus {
 
 export interface PounchaSyncStatus {
   configured: boolean;
+  upload_configured: boolean;
   sheets_configured: boolean;
   busy_configured: boolean;
+  busy_calibrated: boolean;
   sync_enabled: boolean;
   scheduler: PounchaSchedulerStatus;
   last_run: PounchaSyncRun | null;
