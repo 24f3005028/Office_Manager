@@ -152,6 +152,10 @@ try {
         -Arguments @('"' + (Join-Path $frontend 'node_modules\next\dist\bin\next') + '"', 'start', '--hostname', '127.0.0.1', '--port', '3000') `
         -Directory $frontend -Url 'http://127.0.0.1:3000/whatsapp-bill-sender' `
         -Validate { param($r) [string]$r -match 'Office document dashboard' }
+    Start-LocalService -Name 'mobile' -Port 8002 -Executable $python `
+        -Arguments @('-m', 'uvicorn', 'app.mobile_main:app', '--host', '127.0.0.1', '--port', '8002') `
+        -Directory $backend -Url 'http://127.0.0.1:8002/health' `
+        -Validate { param($r) $r.service -eq 'office-mobile' -and $r.manual_only -eq $true }
     Write-Host 'Office Dashboard is running. WhatsApp restores its saved session in the background.'
     Write-Host "Logs: $logs"
     if (!$NoBrowser) { Start-Process 'http://127.0.0.1:3000/whatsapp-bill-sender' }

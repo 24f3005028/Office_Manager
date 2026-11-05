@@ -1,6 +1,6 @@
 # Android outstanding bills app — proposed implementation
 
-Status: implementation in progress. Backend account/token/job storage, exact invoice-header parsing, native report verification and a five-second Windows warning are scaffolded. The mobile API and Android app are not yet connected. BUSY native export still requires live calibration; do not treat this feature as production-ready. Android first, for the owner and selected employees. Fresh reports depend on the office PC staying powered on, online, unlocked, with H.S. TRADERS logged into BUSY. All generation is explicitly requested; no scheduler.
+Status: Android app, private mobile gateway, office access-management page, exact invoice lookup, PDF downloads/sharing, own-number WhatsApp delivery and the five-second office warning are implemented. The signed APK is built locally. Native BUSY export still requires a successful live calibration check: the earlier favourite-menu approach did not reach the expected screen; it was replaced with Account Ledger → Ctrl+R Receivable, but its live retest was blocked after the physical Escape stop. Do not treat fresh BUSY reports as verified yet. Android first, for the owner and selected employees. Fresh reports depend on the office PC staying powered on, online, unlocked, with H.S. TRADERS logged into BUSY. All generation is explicitly requested; no scheduler.
 
 ## Product flow
 
@@ -62,7 +62,7 @@ E:/File.pdf is a readable, single-page native Bills Receivable report for INDERJ
 
 ## Implementation sequence and acceptance
 
-1. Sample PDF received and inspected: E:/File.pdf. Earliest report date and all-party employee access confirmed. Obtain the BUSY account-list Excel export and calibrate navigation/export locally. Confirm invoice archive coverage for each offered financial year.
+1. Sample PDF received and inspected: E:/File.pdf. Earliest report date and all-party employee access confirmed. The supplied ListofAccounts.xlsx was imported: 898 debtor/creditor names, excluding other account groups and private columns. Live invoice checks cover financial years 2024-25, 2025-26 and 2026-27, including both HST/year/number and HST/number/year formats. Native report calibration is still pending.
 2. Implement the desktop adapter and shared BUSY queue. Test paid, partly paid, old-year, ₹1 residual, zero outstanding, on-account credits and multi-page cases against native reports.
 3. Implement mobile authentication, permission checks, report/download API and dedicated WhatsApp delivery. Test concurrent requests, retries, interruptions and cross-user access denial.
 4. Build the simple Expo screens, outstanding statements, financial-year/bill-number lookup, PDF viewing/download, own-number delivery and honest offline states.

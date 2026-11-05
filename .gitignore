@@ -11,6 +11,16 @@ backend/.mypy_cache/
 backend/.ruff_cache/
 data/
 tmp/
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/android/
+mobile/ios/
+mobile/.env.local
+*.keystore
+*.jks
+*.apk
+.g/
 
 # Node / Next.js
 frontend/node_modules/

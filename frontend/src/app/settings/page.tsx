@@ -40,6 +40,7 @@ export default function SettingsRoute() {
         <Link className="button button-secondary" href="/">Back home</Link>
       </div>
       {error && <div className="notice notice-error">{error}</div>}
+      <div className="notice" style={{marginBottom:24}}><strong>Android app</strong><p>Manage approved people, connect phones and update the party list.</p><Link href="/mobile-access" className="button button-secondary">Manage mobile access</Link></div>
       <div className="settings-layout">
         <section className="panel settings-connection-card">
           <div className="section-heading compact-heading">

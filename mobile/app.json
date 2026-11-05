@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "H.S. Traders Office",
+    "slug": "hs-traders-office",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "com.hstraders.office",
+      "versionCode": 1,
+      "permissions": [],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-sharing"
+    ],
+    "extra": {
+      "description": "Private, on-demand office statements and bill PDFs"
+    }
+  }
+}
