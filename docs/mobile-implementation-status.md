@@ -2,6 +2,8 @@
 
 ## Implemented
 
+- Version 1.2.1 (Android versionCode 4) adds dashboard/native Copy code buttons and remote invitation creation for the single server-configured invite manager. The designated approved account is configured in ignored local settings; its phone is not embedded in the app or committed. The capability is server-authorized, revocable, and invitation creators are audited.
+
 - Version 1.2.0 (Android versionCode 3) adds the mobile Office tab: Pouncha preview/update, date/category document selection, saved WhatsApp recipients, opening messages, explicit send confirmation, job progress/cancellation and per-user request history. Every approved mobile user can use both tools.
 - Mobile tools use fixed loopback calls to the existing office services. No dashboard settings, WhatsApp account controls, bridge API keys or generic proxy paths are exposed through the mobile gateway. Repeated request keys never queue duplicate sends/updates; lost confirmations are held for review.
 - Bill download names include the bill number and required party name. Statement names use the party name. These names are also used for own-number WhatsApp attachments; original archive files are unchanged.
@@ -20,7 +22,7 @@
 
 ## Verification
 
-- Complete backend suite: 206 passed, including report navigation, Excel/PDF format switching, pairing phone checks, party-named attachments, cleanup, mobile Office authentication/ownership/idempotency and mobile Pouncha warning cancellation.
+- Complete backend suite: 208 passed, including report navigation, Excel/PDF format switching, pairing phone checks, party-named attachments, cleanup, mobile Office authentication/ownership/idempotency, mobile Pouncha warning cancellation, designated invite-manager authorization and auditing.
 - Strict mypy and Ruff passed; frontend TypeScript, ESLint and production build passed.
 - Android TypeScript and Metro/Hermes bundle passed; native ARM64/ARMv7 release build succeeded. Final APK signing and package metadata checked with Android SDK tools. The office HTTPS address is prefilled; signing credentials and the keystore are absent from the APK.
 - Mobile dependency audit clear after overriding the two moderate build-tool dependency advisories.

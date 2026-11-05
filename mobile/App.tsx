@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import OfficeToolsScreen from "./src/OfficeToolsScreen";
+import InviteManager from "./src/InviteManager";
 import * as SecureStore from "expo-secure-store";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -716,6 +717,15 @@ function OfficeApp() {
                   disabled={busy}
                   onPress={() => void open("tools")}
                 />
+                {person?.can_invite_users && (
+                  <Button
+                    title="Invite new users"
+                    secondary
+                    icon="share"
+                    disabled={busy}
+                    onPress={() => setScreen("account")}
+                  />
+                )}
                 <View style={styles.sectionHead}>
                   <Text style={styles.sectionTitle}>Recent statements</Text>
                   <Pressable
@@ -1135,6 +1145,7 @@ function OfficeApp() {
                     }
                   />
                 </View>
+                {person?.can_invite_users && <InviteManager api={api} />}
                 <Note>
                   Keep Tailscale connected on your phone. You can use the app
                   from anywhere with internet access.
@@ -1185,7 +1196,7 @@ function OfficeApp() {
                   <Text style={styles.dangerText}>Disconnect this phone</Text>
                 </Pressable>
                 <Text style={[styles.noteText, { textAlign: "center" }]}>
-                  H.S. Traders Office · Version 1.2
+                  H.S. Traders Office · Version 1.2.1
                 </Text>
               </ScrollView>
             )}

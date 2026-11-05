@@ -14,6 +14,7 @@ Expo / React Native / TypeScript. The app connects only to an HTTPS mobile gatew
 - Outstanding PDFs use the party name for opening, downloads, sharing and WhatsApp attachments.
 - Version 1.2 adds **Office**: all approved users can preview/update Pouncha and send selected saved PDFs to office WhatsApp contacts. The existing office queue performs sends with the dashboard's ordering, date labels, cancellation and uncertain-outcome handling. Mobile Pouncha exports always show the five-second office warning.
 - Bill downloads use `BILL-NUMBER - PARTY NAME.pdf`; statement downloads use `PARTY NAME.pdf`. A bill whose party cannot be read must be checked by the office before mobile downloading or own-number sharing.
+- Version 1.2.1 adds Copy code on the office dashboard and native clipboard copying for mobile invites. The server-designated invite manager has **Invite new users** on Home and a form under their account. New users receive ordinary access; invite-manager enrollment stays on the office dashboard.
 
 ## Office setup
 
@@ -24,6 +25,8 @@ Expo / React Native / TypeScript. The app connects only to an HTTPS mobile gatew
 5. Create a personal invite with name and international WhatsApp number. It expires in 15 minutes and works once. Enter the private office HTTPS address and invite in the Android app. Sessions expire after 30 days; the owner can revoke sooner.
 
 The phone can download the APK from the private office address followed by `/install/android.apk` while connected to Tailscale. The release build prefills the office address from the signed-in Tailscale client. Initial APK installation does not require an app session; party lists, reports and invoice PDFs do.
+
+Set `MOBILE_INVITE_ADMIN_PHONE` only in the ignored office `backend/.env` to the designated approved user's international digits-only number. Empty disables remote invitation creation. Authorization is checked against the authenticated account on every request, and the creator is audited. Raw invite codes are returned once and stored only as hashes. App invites do not grant Tailscale membership.
 
 The office PC must stay unlocked and BUSY logged into H.S. TRADERS for fresh reports. Each such request shows a five-second native warning; cancel/close/Escape/Enter prevents the request from touching BUSY. Ignoring it permits the request after five seconds. A shared cross-process lock excludes Pouncha automation. Archived invoice reads never operate BUSY. A user may have one active report request at a time.
 

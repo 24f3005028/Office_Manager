@@ -7,6 +7,7 @@ export interface Person {
   id: string;
   name: string;
   phone: string;
+  can_invite_users?: boolean;
 }
 export interface Party {
   id: string;

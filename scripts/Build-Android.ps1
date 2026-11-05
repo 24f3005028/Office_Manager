@@ -67,6 +67,14 @@ try {
         $gradle = $gradle.Replace('    defaultConfig {', "    defaultConfig {`n        externalNativeBuild { cmake { arguments '-DCMAKE_OBJECT_PATH_MAX=240' } }")
     }
     $gradle = [regex]::Replace($gradle, 'CMAKE_OBJECT_PATH_MAX=\d+', 'CMAKE_OBJECT_PATH_MAX=240')
+    # Keep updates correctly versioned even when retaining the native project.
+    $appConfiguration = (Get-Content -LiteralPath (Join-Path $mobile 'app.json') -Raw | ConvertFrom-Json).expo
+    if ($appConfiguration.version -notmatch '^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$' -or
+        [int]$appConfiguration.android.versionCode -lt 1) { throw 'Invalid Android app version.' }
+    if ([regex]::Matches($gradle, 'versionCode\s+\d+').Count -ne 1 -or
+        [regex]::Matches($gradle, 'versionName\s+"[^"]+"').Count -ne 1) { throw 'Android version fields changed.' }
+    $gradle = [regex]::Replace($gradle, 'versionCode\s+\d+', ('versionCode ' + $appConfiguration.android.versionCode))
+    $gradle = [regex]::Replace($gradle, 'versionName\s+"[^"]+"', ('versionName "' + $appConfiguration.version + '"'))
     [IO.File]::WriteAllText($gradlePath, $gradle, (New-Object Text.UTF8Encoding($false)))
     # Build both common phone architectures; no emulator-only libraries.
     Push-Location -LiteralPath (Join-Path $mobile 'android')
