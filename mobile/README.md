@@ -12,6 +12,8 @@ Expo / React Native / TypeScript. The app connects only to an HTTPS mobile gatew
 - Version 1.1: navy/blue mobile redesign, bottom navigation and the H.S. Traders logo as the Android launcher icon.
 - Separate country code (default +91) and mobile number during pairing, checked against the invite's approved number. The office invite form uses the same split.
 - Outstanding PDFs use the party name for opening, downloads, sharing and WhatsApp attachments.
+- Version 1.2 adds **Office**: all approved users can preview/update Pouncha and send selected saved PDFs to office WhatsApp contacts. The existing office queue performs sends with the dashboard's ordering, date labels, cancellation and uncertain-outcome handling. Mobile Pouncha exports always show the five-second office warning.
+- Bill downloads use `BILL-NUMBER - PARTY NAME.pdf`; statement downloads use `PARTY NAME.pdf`. A bill whose party cannot be read must be checked by the office before mobile downloading or own-number sharing.
 
 ## Office setup
 

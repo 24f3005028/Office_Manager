@@ -2,6 +2,10 @@
 
 ## Implemented
 
+- Version 1.2.0 (Android versionCode 3) adds the mobile Office tab: Pouncha preview/update, date/category document selection, saved WhatsApp recipients, opening messages, explicit send confirmation, job progress/cancellation and per-user request history. Every approved mobile user can use both tools.
+- Mobile tools use fixed loopback calls to the existing office services. No dashboard settings, WhatsApp account controls, bridge API keys or generic proxy paths are exposed through the mobile gateway. Repeated request keys never queue duplicate sends/updates; lost confirmations are held for review.
+- Bill download names include the bill number and required party name. Statement names use the party name. These names are also used for own-number WhatsApp attachments; original archive files are unchanged.
+
 - Expo Android app, locally signed release APK at `output/android/HS-Traders-Office.apk`.
 - Version 1.1.0 (Android versionCode 2): redesigned mobile screens, bottom navigation, supplied H.S. Traders launcher icon, separate country-code/mobile-number setup and party-named statement PDFs.
 - Failed report exports are removed immediately. Completed PDFs are removed after 48 hours at startup and on ordinary report requests/history access, without a scheduler. Pouncha temporary Excel cleanup is regression-tested on success, export/parse failure and uncertain append outcomes.
@@ -16,7 +20,7 @@
 
 ## Verification
 
-- Complete backend suite: 201 passed, including report navigation, Excel/PDF format switching, pairing phone checks, party-named attachments and cleanup regression coverage.
+- Complete backend suite: 206 passed, including report navigation, Excel/PDF format switching, pairing phone checks, party-named attachments, cleanup, mobile Office authentication/ownership/idempotency and mobile Pouncha warning cancellation.
 - Strict mypy and Ruff passed; frontend TypeScript, ESLint and production build passed.
 - Android TypeScript and Metro/Hermes bundle passed; native ARM64/ARMv7 release build succeeded. Final APK signing and package metadata checked with Android SDK tools. The office HTTPS address is prefilled; signing credentials and the keystore are absent from the APK.
 - Mobile dependency audit clear after overriding the two moderate build-tool dependency advisories.

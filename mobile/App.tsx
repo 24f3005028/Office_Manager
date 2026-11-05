@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import OfficeToolsScreen from "./src/OfficeToolsScreen";
 import * as SecureStore from "expo-secure-store";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -49,7 +50,8 @@ const statusText: Record<string, string> = {
   cancelled: "Someone is using BUSY",
   failed: "Report could not be created",
 };
-type Screen = "home" | "outstanding" | "invoices" | "history" | "account";
+type Screen =
+  "home" | "outstanding" | "invoices" | "history" | "account" | "tools";
 const errorText = (error: unknown) =>
   error instanceof Error
     ? error.message
@@ -707,6 +709,13 @@ function OfficeApp() {
                   </View>
                   <Icon name="chevron" size={18} />
                 </Pressable>
+                <Button
+                  title="Update sheet & send bills"
+                  icon="share"
+                  secondary
+                  disabled={busy}
+                  onPress={() => void open("tools")}
+                />
                 <View style={styles.sectionHead}>
                   <Text style={styles.sectionTitle}>Recent statements</Text>
                   <Pressable
@@ -1024,8 +1033,18 @@ function OfficeApp() {
                         Different PDFs exist for this bill. Ask the office to
                         resolve them before downloading or sending.
                       </Text>
+                    ) : !row.party_name ||
+                      row.party_name === "See PDF for party name" ? (
+                      <Text style={styles.error}>
+                        The party name could not be read. Ask the office to
+                        check this bill PDF.
+                      </Text>
                     ) : (
-                      pdfActions("invoices", row.file_id, row.bill_number)
+                      pdfActions(
+                        "invoices",
+                        row.file_id,
+                        row.bill_number + " - " + row.party_name,
+                      )
                     )}
                   </View>
                 ))}
@@ -1070,6 +1089,8 @@ function OfficeApp() {
                   whenever you need updated figures.
                 </Note>
               </ScrollView>
+            ) : screen === "tools" ? (
+              <OfficeToolsScreen api={api} />
             ) : (
               <ScrollView contentContainerStyle={styles.content}>
                 <Heading
@@ -1164,7 +1185,7 @@ function OfficeApp() {
                   <Text style={styles.dangerText}>Disconnect this phone</Text>
                 </Pressable>
                 <Text style={[styles.noteText, { textAlign: "center" }]}>
-                  H.S. Traders Office · Version 1.1
+                  H.S. Traders Office · Version 1.2
                 </Text>
               </ScrollView>
             )}
@@ -1177,6 +1198,7 @@ function OfficeApp() {
                 ["home", "home", "Home"],
                 ["outstanding", "statement", "Statements"],
                 ["invoices", "search", "Bills"],
+                ["tools", "calendar", "Office"],
                 ["history", "history", "Activity"],
               ] as const
             ).map(([key, icon, title]) => (
