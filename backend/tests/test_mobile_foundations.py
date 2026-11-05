@@ -77,3 +77,6 @@ def test_invoice_identity_is_header_based_and_preserves_series() -> None:
     assert identity("E-Way Bill No.: 1234567890\nHST/26-27/74") is None
     assert identity("Invoice No.: HST/26-27/74\nInvoice No.: HST/26-27/174") is None
     assert identity("Invoice No.: HST/26-28/74") is None
+    legacy = identity("Invoice No.: HST/187/24-25\nBilled to : EXAMPLE PARTY")
+    assert legacy is not None
+    assert legacy["financial_year"] == "24-25" and legacy["serial"] == 187

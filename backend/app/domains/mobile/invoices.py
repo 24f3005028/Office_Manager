@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -12,11 +13,27 @@ import pymupdf
 
 from app.domains.documents.scanner import DocumentScanner
 
-VOUCHER = r"([A-Z]+(?:/[A-Z]+)?)/(\d{2})-(\d{2})/(\d+)"
+VOUCHER = r"([A-Z]+(?:/[A-Z]+)?)/(?:20)?(\d{2})-(?:20)?(\d{2})/(\d+)"
+LEGACY = r"([A-Z]+(?:/[A-Z]+)?)/(\d+)/(?:20)?(\d{2})-(?:20)?(\d{2})"
 HEADER = re.compile(
-    r"(?:Invoice|Bill|Voucher)\s*(?:No\.?|Number)\s*:?\s*(" + VOUCHER + r")\b", re.I
+    r"(?:Invoice|Bill|Voucher)\s*(?:No\.?|Number)\s*:?\s*((?:" + VOUCHER + "|" + LEGACY + r"))\b",
+    re.I,
 )
 FULL = re.compile(VOUCHER, re.I)
+
+
+def parse_number(value: str) -> tuple[str, str, int] | None:
+    parsed = FULL.fullmatch(value)
+    if parsed:
+        series, first, last, serial = parsed.groups()
+    else:
+        parsed = re.fullmatch(LEGACY, value, re.I)
+        if parsed is None:
+            return None
+        series, serial, first, last = parsed.groups()
+    if (int(last) - int(first)) % 100 != 1:
+        return None
+    return series.upper(), f"{first}-{last}", int(serial)
 
 
 def identity(text: str) -> dict[str, Any] | None:
@@ -25,31 +42,55 @@ def identity(text: str) -> dict[str, Any] | None:
     if len(numbers) != 1:
         return None
     number = numbers.pop()
-    parsed = FULL.fullmatch(number)
-    if parsed is None or (int(parsed[3]) - int(parsed[2])) % 100 != 1:
+    parsed = parse_number(number)
+    if parsed is None:
         return None
     party = re.search(r"Billed\s+to\s*:?\s*(?:Shipped\s+to\s*:?\s*)?([^\r\n]+)", text, re.I)
     dated = re.search(r"\bDated\s*:?\s*(\d{1,2}-\d{1,2}-\d{4})", text, re.I)
     return {
         "bill_number": number,
-        "financial_year": f"{parsed[2]}-{parsed[3]}",
-        "serial": int(parsed[4]),
-        "series": parsed[1].upper(),
+        "financial_year": parsed[1],
+        "serial": parsed[2],
+        "series": parsed[0],
         "party_name": party[1].strip() if party else "See PDF for party name",
         "date": dated[1] if dated else "",
     }
 
 
 class InvoiceCatalogue:
-    def __init__(self, scanner: DocumentScanner) -> None:
+    def __init__(
+        self, scanner: DocumentScanner, roots_provider: Callable[[], list[Path]] | None = None
+    ) -> None:
         self.scanner = scanner
+        self.roots_provider = roots_provider
         self._cache: dict[str, tuple[int, int, dict[str, Any] | None]] = {}
         self._lock = threading.Lock()
 
-    def entries(self) -> list[dict[str, Any]]:
+    def entries(
+        self,
+        serial_filter: int | None = None,
+        sample_years: bool = False,
+        file_id_filter: str | None = None,
+    ) -> list[dict[str, Any]]:
         entries = []
+        sampled_roots: set[int] = set()
         with self._lock:
+            if self.roots_provider:
+                self.scanner.set_roots({"bills": self.roots_provider()})
             for record in self.scanner.scan(categories=["bills"]):
+                if file_id_filter is not None and record.file_id != file_id_filter:
+                    continue
+                if sample_years and record.root_index in sampled_roots:
+                    continue
+                # Filenames only narrow candidates; PDF headers remain authoritative.
+                # This avoids parsing every archived PDF for a single bill lookup.
+                hint = re.match(
+                    r"^(?:[A-Za-z/]+[-_ ]+)?"
+                    r"(?:(?:20)?\d{2}[-_]\d{2}[-_ ])?(\d+)(?:\D|$)",
+                    record.path.stem,
+                )
+                if serial_filter is not None and hint and int(hint[1]) != serial_filter:
+                    continue
                 try:
                     stat = record.path.stat()
                     cached = self._cache.get(record.file_id)
@@ -62,6 +103,14 @@ class InvoiceCatalogue:
                         self._cache[record.file_id] = (stat.st_mtime_ns, stat.st_size, parsed)
                     parsed = self._cache[record.file_id][2]
                     if parsed:
+                        root = self.scanner.roots_by_category["bills"][record.root_index]
+                        labelled = re.search(r"(?:20)?(\d{2})-(\d{2})", root.name)
+                        if (
+                            sample_years
+                            and labelled
+                            and f"{labelled[1]}-{labelled[2]}" == parsed["financial_year"]
+                        ):
+                            sampled_roots.add(record.root_index)
                         entries.append(
                             parsed
                             | {
@@ -75,22 +124,24 @@ class InvoiceCatalogue:
         return entries
 
     def years(self) -> list[str]:
-        return sorted({str(row["financial_year"]) for row in self.entries()}, reverse=True)
+        return sorted(
+            {str(row["financial_year"]) for row in self.entries(sample_years=True)}, reverse=True
+        )
 
     def search(self, year: str, bill: str) -> list[dict[str, Any]]:
         normalized = re.sub(r"\s+", "", bill).upper()
-        full = FULL.fullmatch(normalized)
+        full = parse_number(normalized)
         if full:
-            if f"{full[2]}-{full[3]}" != year:
+            if full[1] != year:
                 raise ValueError("The bill number belongs to a different financial year.")
-            serial, series = int(full[4]), full[1].upper()
+            serial, series = full[2], full[0]
         elif re.fullmatch(r"\d{1,12}", normalized):
             serial, series = int(normalized), None
         else:
             raise ValueError("Enter a bill number such as 74 or HST/L/26-27/74.")
         matches = [
             row
-            for row in self.entries()
+            for row in self.entries(serial_filter=serial)
             if row["financial_year"] == year
             and row["serial"] == serial
             and (series is None or row["series"] == series)
@@ -99,11 +150,17 @@ class InvoiceCatalogue:
         for row in matches:
             content = self.scanner.validate_path("bills", row["path"]).read_bytes()
             checksum = hashlib.sha256(content).hexdigest()
-            hashes.setdefault((row["bill_number"], checksum), row | {"sha256": checksum})
+            canonical = f"{row['series']}/{row['financial_year']}/{row['serial']}"
+            hashes.setdefault((canonical, checksum), row | {"sha256": checksum})
         results = list(hashes.values())
         for row in results:
             row["conflicting_copies"] = (
-                sum(other["bill_number"] == row["bill_number"] for other in results) > 1
+                sum(
+                    (other["series"], other["financial_year"], other["serial"])
+                    == (row["series"], row["financial_year"], row["serial"])
+                    for other in results
+                )
+                > 1
             )
         return [self.public(row) for row in results]
 
@@ -113,7 +170,7 @@ class InvoiceCatalogue:
 
     def file(self, file_id: str) -> tuple[Path, dict[str, Any]]:
         # Re-scan/re-parse changed files before granting access; no arbitrary paths.
-        row = next((item for item in self.entries() if item["file_id"] == file_id), None)
+        row = next(iter(self.entries(file_id_filter=file_id)), None)
         if row is None:
             raise ValueError("The saved bill PDF is unavailable or cannot be identified safely.")
         path = self.scanner.validate_path("bills", row["path"])

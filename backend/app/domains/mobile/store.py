@@ -123,10 +123,52 @@ class MobileStore:
         with closing(self.database.connect()) as db, db:
             before = db.total_changes
             db.executemany(
-                "INSERT OR IGNORE INTO mobile_parties VALUES (?,?)",
+                "INSERT OR IGNORE INTO mobile_parties (id,name) VALUES (?,?)",
                 [(digest(name.casefold())[:32], name) for name in names],
             )
             return db.total_changes - before
+
+    def delivery(self, user_id: str, artifact: str) -> tuple[dict[str, Any], bool]:
+        with closing(self.database.connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT * FROM mobile_deliveries WHERE user_id=? AND artifact_key=?",
+                (user_id, artifact),
+            ).fetchone()
+            if row:
+                if row["status"] == "not_sent":
+                    db.execute(
+                        "UPDATE mobile_deliveries SET status='sending', operation_id=?, "
+                        "error=NULL WHERE id=?",
+                        (f"mobile-{uuid4().hex}", row["id"]),
+                    )
+                    updated = db.execute(
+                        "SELECT * FROM mobile_deliveries WHERE id=?", (row["id"],)
+                    ).fetchone()
+                    return dict(updated), True
+                return dict(row), False
+            delivery_id = uuid4().hex
+            db.execute(
+                "INSERT INTO mobile_deliveries "
+                "(id,user_id,artifact_key,operation_id,status,created_at) "
+                "VALUES (?,?,?,?,'sending',?)",
+                (delivery_id, user_id, artifact, f"mobile-{delivery_id}", now()),
+            )
+            return dict(
+                db.execute("SELECT * FROM mobile_deliveries WHERE id=?", (delivery_id,)).fetchone()
+            ), True
+
+    def finish_delivery(
+        self, delivery_id: str, status: str, message_id: str | None = None, error: str | None = None
+    ) -> dict[str, Any]:
+        with closing(self.database.connect()) as db, db:
+            db.execute(
+                "UPDATE mobile_deliveries SET status=?,message_id=?,error=? WHERE id=?",
+                (status, message_id, error, delivery_id),
+            )
+            return dict(
+                db.execute("SELECT * FROM mobile_deliveries WHERE id=?", (delivery_id,)).fetchone()
+            )
 
     def parties(self, query: str = "") -> list[dict[str, str]]:
         with closing(self.database.connect()) as db:

@@ -45,7 +45,8 @@ def verify_report(path: Path, party: str, as_of: date) -> dict[str, Any]:
         "Bills Receivable" not in flat
         or "H.S. TRADERS" not in flat
         or account is None
-        or normalize(account[1]) != normalize(party)
+        or re.sub(r"\s+", " ", account[1]).strip().casefold()
+        != re.sub(r"\s+", " ", party).strip().casefold()
         or status is None
         or parse(status[1]) != as_of
         or dates is None
@@ -91,21 +92,42 @@ class OutstandingExporter(BusyExporter):
         company = re.search(r"\|\s*([^|]+?)\s*\(F\.Y\.", main.window_text(), re.I)
         if company is None or normalize(company[1]) != normalize(self.settings.pouncha_company):
             raise SyncError("BUSY must be logged into H.S. TRADERS.")
-        if not self._home(main, desktop):
-            raise SyncError("BUSY could not return to its homepage safely.")
-        # The supplied BUSY favourite list has Outstanding Bills in fourth position.
-        # Never enter options until the expected One Account dialog is confirmed.
-        target = self._guard(main, desktop)[0]
-        favourites = [
-            button for button in self._visible(target, "Button") if button.window_text() == "TVFAV"
+        # Account Ledger exposes the documented Ctrl+R Receivable shortcut.
+        # Reuse verified Alt+L navigation rather than depending on favourite order.
+        target, ledger_fields = self._open_ledger(main, desktop)
+        day = as_of.strftime("%d-%m-%Y")
+        ledger_values = [
+            "STANDARD",
+            party,
+            day,
+            day,
+            "Single Account (Auto)",
+            "Name",
+            "N",
+            "N",
+            "N",
+            "N",
+            "N",
+            "N",
+            "N",
+            "N",
+            "Y",
         ]
-        if len(favourites) != 1:
-            raise SyncError("BUSY's Favourites control was not found.")
-        favourites[0].invoke()
-        target.type_keys("{HOME}{DOWN 3}{ENTER}", pause=0.2)
-        target = self._wait(main, desktop, lambda root: bool(self._buttons(root, "One Account")))
-        self._click(target, "One Account")
-        target = self._wait(main, desktop, lambda root: len(self._edits(root)) == 19)
+        for control, value in zip(ledger_fields, ledger_values, strict=True):
+            self._set(control, value)
+        self._click(target, r"OK\s*\(F2\)")
+        target = self._wait(
+            main, desktop, self._is_report, self.settings.pouncha_export_timeout_seconds
+        )
+        target.type_keys("^r", pause=0.2)
+        target = self._wait(
+            main,
+            desktop,
+            lambda root: len(self._edits(root)) == 19 or bool(self._buttons(root, "One Account")),
+        )
+        if self._buttons(target, "One Account"):
+            self._click(target, "One Account")
+            target = self._wait(main, desktop, lambda root: len(self._edits(root)) == 19)
         edits = self._edits(target)
         # Group the two columns; screen scaling affects coordinates, not relative order.
         left_edge, right_edge = (

@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.api.routes import busy_ledger as busy_ledger_routes
-from app.api.routes import documents, health, send_jobs, whatsapp
+from app.api.routes import documents, health, mobile_admin, send_jobs, whatsapp
 from app.api.routes import pouncha_sync as pouncha_routes
 from app.api.routes import settings as settings_routes
 from app.config import Settings
@@ -21,6 +21,7 @@ from app.domains.busy_ledger.service import BusyLedgerService
 from app.domains.documents.pdf_dates import PdfDateResolver
 from app.domains.documents.scanner import DocumentScanner
 from app.domains.documents.service import DocumentService
+from app.domains.mobile.store import MobileStore
 from app.domains.pouncha_sync.busy import BusyExporter
 from app.domains.pouncha_sync.repository import RunRepository
 from app.domains.pouncha_sync.service import PounchaService
@@ -110,6 +111,7 @@ def create_app(
         worker = SendJobWorker(send_job_service, runtime_settings.worker_poll_seconds)
         application.state.settings = runtime_settings
         application.state.database = database
+        application.state.mobile_store = MobileStore(database)
         application.state.workspace_settings = workspace_settings
         application.state.document_service = document_service
         application.state.pdf_date_resolver = document_service.pdf_dates
@@ -151,6 +153,7 @@ def create_app(
     application.include_router(settings_routes.router, prefix="/api")
     application.include_router(whatsapp.router, prefix="/api")
     application.include_router(pouncha_routes.router, prefix="/api")
+    application.include_router(mobile_admin.router, prefix="/api")
     return application
 
 
