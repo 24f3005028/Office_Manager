@@ -36,6 +36,7 @@ export default function MobileAccess() {
     [name, setName] = useState(""),
     [phone, setPhone] = useState(""),
     [countryCode, setCountryCode] = useState("91"),
+    [copied, setCopied] = useState(false),
     [invite, setInvite] = useState<{
       invite_code: string;
       expires_at: string;
@@ -99,6 +100,7 @@ export default function MobileAccess() {
                   );
                 if (countryCode.length + phone.length > 15)
                   throw new Error("Check the country code and mobile number.");
+                setCopied(false);
                 setInvite(
                   await call("/invites", {
                     name: name.trim(),
@@ -190,6 +192,22 @@ export default function MobileAccess() {
                 {new Date(invite.expires_at).toLocaleTimeString("en-IN")}. Works
                 once. Keep it private.
               </p>
+              <button
+                className="button button-secondary"
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(invite.invite_code);
+                    setCopied(true);
+                  } catch {
+                    setError(
+                      "Copy was unavailable. Select the code above and copy it manually.",
+                    );
+                  }
+                }}
+              >
+                {copied ? "Copied!" : "Copy code"}
+              </button>
               <button
                 className="button button-quiet"
                 onClick={() => setInvite(null)}
