@@ -443,3 +443,68 @@ def test_invoice_download_name_requires_bill_and_party(runtime: Any) -> None:
     )
     with pytest.raises(ValueError, match="party name"):
         invoice_filename({"bill_number": "HST/26-27/74", "party_name": "See PDF for party name"})
+
+
+def test_only_designated_active_user_can_create_audited_mobile_invites(runtime: Any) -> None:
+    service, _ = runtime
+    service.settings.mobile_invite_admin_phone = "919999999999"
+    manager = service.store.invite("Manager", "919999999999")
+    employee = service.store.invite("Employee", "918888888888")
+    with TestClient(create_mobile_app(service=service)) as client:
+
+        def pair(invite: dict[str, Any]) -> dict[str, str]:
+            response = client.post("/mobile/v1/pair", json={"invite_code": invite["invite_code"]})
+            return {"Authorization": "Bearer " + response.json()["token"]}
+
+        owner, regular = pair(manager), pair(employee)
+        payload = {"name": "New employee", "phone": "917777777777"}
+        assert client.post("/mobile/v1/invites", json=payload).status_code == 401
+        assert client.post("/mobile/v1/invites", json=payload, headers=regular).status_code == 403
+        assert client.get("/mobile/v1/me", headers=owner).json()["can_invite_users"] is True
+        assert client.get("/mobile/v1/me", headers=regular).json()["can_invite_users"] is False
+        response = client.post("/mobile/v1/invites", json=payload, headers=owner)
+        assert response.status_code == 201
+        invite = response.json()
+        assert len(invite["invite_code"]) >= 30
+        new_user = pair(invite)
+        assert client.get("/mobile/v1/me", headers=new_user).json()["can_invite_users"] is False
+        assert client.post("/mobile/v1/invites", json=payload, headers=new_user).status_code == 403
+        assert (
+            client.post(
+                "/mobile/v1/invites", json=payload | {"phone": "919999999999"}, headers=owner
+            ).status_code
+            == 400
+        )
+        assert (
+            client.post(
+                "/mobile/v1/invites", json=payload | {"can_invite_users": True}, headers=owner
+            ).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                "/mobile/v1/invites", json=payload | {"name": "   "}, headers=owner
+            ).status_code
+            == 400
+        )
+        with service.store.database.connect() as db:
+            audit = db.execute(
+                "SELECT created_by FROM mobile_invite_audit WHERE user_id=?", (invite["id"],)
+            ).fetchone()
+            assert audit["created_by"] == manager["id"]
+        service.store.revoke(manager["id"])
+        assert client.post("/mobile/v1/invites", json=payload, headers=owner).status_code == 401
+
+
+def test_mobile_invite_management_is_disabled_without_configuration(runtime: Any) -> None:
+    service, _ = runtime
+    service.settings.mobile_invite_admin_phone = ""
+    with TestClient(create_mobile_app(service=service)) as client:
+        headers = login(client, service)
+        assert client.get("/mobile/v1/me", headers=headers).json()["can_invite_users"] is False
+        assert (
+            client.post(
+                "/mobile/v1/invites", json={"name": "New", "phone": "917777777777"}, headers=headers
+            ).status_code
+            == 403
+        )

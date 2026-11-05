@@ -102,6 +102,7 @@ class Settings(BaseSettings):
     )
     busy_financial_year: str = Field(default="26-27", validation_alias="BUSY_FINANCIAL_YEAR")
     mobile_archive_roots: str = "E:/2024-25 BILL PDF|E:/2025-26 BILL PDF"
+    mobile_invite_admin_phone: str = Field(default="", pattern=r"^(?:[1-9][0-9]{7,14})?$")
     pdf_date_extraction: bool = Field(default=True, validation_alias="PDF_DATE_EXTRACTION")
     pdf_date_min_date: date | None = Field(default=None, validation_alias="PDF_DATE_MIN_DATE")
     pdf_date_max_date: date | None = Field(default=None, validation_alias="PDF_DATE_MAX_DATE")

@@ -86,6 +86,11 @@ class ReportRequest(Payload):
     request_key: str = Field(min_length=8, max_length=100, pattern=r"^[a-zA-Z0-9-]+$")
 
 
+class MobileInviteRequest(Payload):
+    name: str = Field(min_length=1, max_length=100, pattern=r"^[^\x00-\x1f]+$")
+    phone: str = Field(pattern=r"^[1-9][0-9]{7,14}$")
+
+
 def create_mobile_app(
     settings: Settings | None = None,
     service: MobileService | None = None,
@@ -168,8 +173,28 @@ def create_mobile_app(
         return result
 
     @app.get("/mobile/v1/me")
-    def me(current: CurrentUser) -> dict[str, Any]:
-        return {"id": current["id"], "name": current["name"], "phone": current["phone"]}
+    def me(request: Request, current: CurrentUser) -> dict[str, Any]:
+        return {
+            "id": current["id"],
+            "name": current["name"],
+            "phone": current["phone"],
+            "can_invite_users": instance(request).can_invite_users(current),
+        }
+
+    @app.post("/mobile/v1/invites", status_code=201)
+    def create_invite(
+        payload: MobileInviteRequest, request: Request, current: CurrentUser
+    ) -> dict[str, Any]:
+        mobile = instance(request)
+        if not mobile.can_invite_users(current):
+            raise HTTPException(
+                403, "Only the designated invite manager can create mobile invites."
+            )
+        if payload.phone == mobile.settings.mobile_invite_admin_phone:
+            raise HTTPException(400, "Create invite-manager access from the office dashboard.")
+        if not payload.name.strip():
+            raise HTTPException(400, "Enter the new user's name.")
+        return mobile.store.invite(payload.name.strip(), payload.phone, created_by=current["id"])
 
     @app.post("/mobile/v1/logout")
     def logout(

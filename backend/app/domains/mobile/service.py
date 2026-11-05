@@ -50,6 +50,13 @@ class MobileService:
     def close(self) -> None:
         self.pool.shutdown(wait=True, cancel_futures=True)
 
+    def can_invite_users(self, user: dict[str, Any]) -> bool:
+        return bool(
+            self.settings.mobile_invite_admin_phone
+            and user["phone"] == self.settings.mobile_invite_admin_phone
+            and self.store.active(user["id"])
+        )
+
     def _remove_report_directory(self, job_id: str) -> None:
         if not re.fullmatch(r"[a-f0-9]{32}", job_id):
             return

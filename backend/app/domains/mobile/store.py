@@ -38,6 +38,9 @@ CREATE TABLE IF NOT EXISTS mobile_office_actions (
  request_key TEXT NOT NULL, kind TEXT NOT NULL, payload_hash TEXT NOT NULL,
  status TEXT NOT NULL, upstream_id TEXT, response TEXT, created_at TEXT NOT NULL,
  UNIQUE(user_id,request_key));
+CREATE TABLE IF NOT EXISTS mobile_invite_audit (
+ user_id TEXT PRIMARY KEY REFERENCES mobile_users(id),
+ created_by TEXT NOT NULL REFERENCES mobile_users(id), created_at TEXT NOT NULL);
 """
 
 
@@ -61,7 +64,7 @@ class MobileStore:
                 dict(row) for row in db.execute("SELECT * FROM mobile_users ORDER BY created_at")
             ]
 
-    def invite(self, name: str, phone: str) -> dict[str, Any]:
+    def invite(self, name: str, phone: str, *, created_by: str | None = None) -> dict[str, Any]:
         user_id, token = uuid4().hex, secrets.token_urlsafe(32)
         expires = (datetime.now(UTC) + timedelta(minutes=15)).isoformat()
         with closing(self.database.connect()) as db, db:
@@ -70,6 +73,10 @@ class MobileStore:
                 "INSERT INTO mobile_tokens VALUES (?,?,?,?)",
                 (digest(token), user_id, "invite", expires),
             )
+            if created_by is not None:
+                db.execute(
+                    "INSERT INTO mobile_invite_audit VALUES (?,?,?)", (user_id, created_by, now())
+                )
         return {"id": user_id, "invite_code": token, "expires_at": expires}
 
     def revoke(self, user_id: str) -> None:
