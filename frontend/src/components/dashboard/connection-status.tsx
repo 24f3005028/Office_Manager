@@ -30,12 +30,12 @@ function connectionCopy(status: WhatsappStatus | null): {
     return { label: "Action required", detail: "The local WhatsApp session needs attention", tone: "danger" };
   }
   if (status?.status === "auth_failure") {
-    return { label: "Authentication failed", detail: "Restart the bridge and scan again", tone: "danger" };
+    return { label: "Authentication failed", detail: "Restart Office and scan again", tone: "danger" };
   }
   if (status?.status === "error") {
     return { label: "Connection issue", detail: status.message ?? "The WhatsApp bridge needs a retry", tone: "warning" };
   }
-  return { label: "Reconnecting", detail: "Waiting for the local WhatsApp bridge", tone: "neutral" };
+  return { label: "Reconnecting", detail: "Waiting for WhatsApp to connect", tone: "neutral" };
 }
 
 export function ConnectionStatus({
@@ -54,7 +54,7 @@ export function ConnectionStatus({
       <div className="section-heading compact-heading">
         <div>
           <p className="eyebrow">Connection</p>
-          <h2 id="connection-heading">WhatsApp bridge</h2>
+          <h2 id="connection-heading">WhatsApp connection</h2>
         </div>
         <span className={`status-pill ${copy.tone}`}>
           <span className="status-dot" />
@@ -64,9 +64,9 @@ export function ConnectionStatus({
 
       <div className="connection-body">
         <div className="connection-summary">
-          <p className="connection-detail">{apiDown ? "Dashboard API unavailable" : copy.detail}</p>
+          <p className="connection-detail">{apiDown ? "Office dashboard is not connected" : copy.detail}</p>
           <p className="muted-text">
-             {apiDown ? "Check that the local API is running, then retry." : status?.message ?? `Bridge status: ${status?.status ?? "unknown"}`}
+             {apiDown ? "Open the Office desktop shortcut, then try again." : (status?.connected || status?.status === "ready" ? "" : status?.message)}
           </p>
           <button className="button button-quiet" type="button" onClick={onRetry}>
             <span aria-hidden="true">↻</span> Refresh status

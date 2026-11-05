@@ -33,9 +33,9 @@ export default function SettingsRoute() {
     <AppShell>
       <div className="setup-header">
         <div>
-          <p className="eyebrow">Workspace settings</p>
-          <h2>Keep the setup under control.</h2>
-          <p className="intro-copy">Manage the local WhatsApp link and the folders the backend scans for bills, credit notes, and debit notes.</p>
+          <p className="eyebrow">Settings</p>
+          <h2>Settings</h2>
+          <p className="intro-copy">Connect WhatsApp and choose where your bill files are saved.</p>
         </div>
         <Link className="button button-secondary" href="/">Back home</Link>
       </div>
@@ -43,10 +43,10 @@ export default function SettingsRoute() {
       <div className="settings-layout">
         <section className="panel settings-connection-card">
           <div className="section-heading compact-heading">
-            <div><p className="eyebrow">WhatsApp connection</p><h2>Linked sending account</h2></div>
+            <div><p className="eyebrow">WhatsApp connection</p><h2>WhatsApp account</h2></div>
             <span className={`status-pill ${connected ? "success" : "warning"}`}><span className="status-dot" />{connected ? "Connected" : "Setup needed"}</span>
           </div>
-          <p className="muted-text">{connected ? "The local bridge is ready and contacts can be imported by the sender." : "Link WhatsApp before opening the sender."}</p>
+          <p className="muted-text">{connected ? "WhatsApp is connected to this computer." : "Link WhatsApp before opening the sender."}</p>
           <Link className="button button-primary" href="/setup">{connected ? "Review setup" : "Link WhatsApp"} <span aria-hidden="true">↗</span></Link>
         </section>
         {settings && <section className="panel settings-folders-card"><FolderSettingsForm settings={settings} onSaved={setSettings} /></section>}

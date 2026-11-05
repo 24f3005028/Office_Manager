@@ -1,42 +1,32 @@
+"use client";
+
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Icon, type IconName } from "./icons";
+
+const navigation: { href: string; title: string; icon: IconName }[] = [
+  { href: "/", title: "Home", icon: "home" },
+  { href: "/whatsapp-bill-sender", title: "Send bills", icon: "send" },
+  { href: "/pouncha-sync", title: "Update Pouncha", icon: "sync" },
+  { href: "/settings", title: "Settings", icon: "settings" },
+];
 
 export function AppShell({ children }: { children: ReactNode }) {
-  return (
-    <main className="app-shell">
-      <div className="ambient-glow ambient-glow-one" />
-      <div className="ambient-glow ambient-glow-two" />
-      <div className="page-container">
-        <header className="app-header">
-          <div className="brand-lockup">
-            <div className="brand-mark" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </div>
-            <div>
-              <p className="eyebrow">Operations console</p>
-              <h1>Office document dashboard</h1>
-            </div>
-          </div>
-          <div className="header-note">
-            <span className="header-note-dot" />
-            Local workspace
-          </div>
-        </header>
-        <nav className="app-nav" aria-label="Primary navigation">
-          <Link href="/">Home</Link>
-          <Link href="/whatsapp-bill-sender">WhatsApp sender</Link>
-          <Link href="/pouncha-sync">Pouncha sync</Link>
-          <Link href="/settings">Settings</Link>
-        </nav>
-        {children}
-        <footer className="app-footer">
-          <span>Documents stay on your local workspace.</span>
-          <span className="footer-divider" aria-hidden="true" />
-          <span>WhatsApp sends run one document at a time.</span>
-        </footer>
-      </div>
-    </main>
-  );
+  const pathname = usePathname();
+  return <div className="app-shell">
+    <a className="skip-link" href="#main-content">Skip to page content</a>
+    <header className="app-header"><div className="header-inner">
+      <Link href="/" className="brand-lockup" aria-label="Office dashboard home">
+        <span className="brand-mark"><Icon name="home" /></span>
+        <span><strong>Office dashboard</strong><small>H.S. TRADERS</small></span>
+      </Link>
+      <nav className="app-nav" aria-label="Main navigation">
+        {navigation.map((item) => <Link key={item.href} href={item.href} className={pathname === item.href ? "active" : ""} aria-current={pathname === item.href ? "page" : undefined}><Icon name={item.icon} /><span>{item.title}</span></Link>)}
+      </nav>
+      <span className="header-note">On this computer</span>
+    </div></header>
+    <main className="page-container" id="main-content">{children}</main>
+    <footer className="app-footer"><span>Office document dashboard</span><span>Need to change folders or connect WhatsApp? <Link href="/settings">Open settings</Link></span></footer>
+  </div>;
 }

@@ -1,5 +1,5 @@
-import { PounchaSyncPage as PounchaSyncPageView } from "@/components/pouncha/pouncha-sync-page";
+import { PounchaSyncPage } from "@/components/pouncha/pouncha-sync-page";
 
-export default function PounchaSyncPage() {
-  return <PounchaSyncPageView />;
+export default function Page() {
+  return <PounchaSyncPage />;
 }

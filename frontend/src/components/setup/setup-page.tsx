@@ -68,7 +68,9 @@ export function SetupPage() {
 
   useEffect(() => {
     const queryReturnTo = new URLSearchParams(window.location.search).get("returnTo");
-    if (queryReturnTo?.startsWith("/")) setReturnTo(queryReturnTo);
+    if (queryReturnTo && ["/", "/whatsapp-bill-sender", "/settings"].includes(queryReturnTo)) {
+      setReturnTo(queryReturnTo);
+    }
     void refresh();
   }, [refresh]);
 

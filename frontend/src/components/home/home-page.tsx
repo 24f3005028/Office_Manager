@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
+import { Icon } from "@/components/layout/icons";
 import { api, ApiError } from "@/lib/api/client";
 import type { WhatsappStatus, WorkspaceSettings } from "@/lib/api/types";
 
@@ -29,7 +29,6 @@ function requiresSetup(status: WhatsappStatus | null): boolean {
 }
 
 export function HomePage() {
-  const router = useRouter();
   const [status, setStatus] = useState<WhatsappStatus | null>(null);
   const [settings, setSettings] = useState<WorkspaceSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,12 +50,7 @@ export function HomePage() {
         setStatus(nextStatus);
         setError(null);
 
-        if (requiresSetup(nextStatus)) {
-          router.replace("/setup?returnTo=%2Fwhatsapp-bill-sender");
-          return;
-        }
-
-        if (!isConnected(nextStatus) && !isStarting(nextStatus) && Date.now() - lastStartAt > 5000) {
+        if (!requiresSetup(nextStatus) && !isConnected(nextStatus) && !isStarting(nextStatus) && Date.now() - lastStartAt > 5000) {
           lastStartAt = Date.now();
           void api.startWhatsapp().catch(() => {
             // The next status poll supplies the actionable state. A temporary
@@ -75,7 +69,7 @@ export function HomePage() {
 
       setLoading(false);
       const nextStatus = statusResult.status === "fulfilled" ? statusResult.value : null;
-      const keepPolling = !nextStatus || !isConnected(nextStatus) || !settingsResult.status || settingsResult.status === "rejected";
+      const keepPolling = !nextStatus || !isConnected(nextStatus) || settingsResult.status === "rejected";
       if (keepPolling) timer = window.setTimeout(() => void poll(), 1800);
     };
 
@@ -84,90 +78,37 @@ export function HomePage() {
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [router]);
+  }, []);
 
   const connected = isConnected(status);
   const initializing = loading || isStarting(status) || (!connected && !requiresSetup(status) && !error);
   const ready = connected && Boolean(settings?.configured) && status?.roots_synced !== false;
-  const senderHref = ready ? "/whatsapp-bill-sender" : "/setup?returnTo=%2Fwhatsapp-bill-sender";
-  const senderDetail = initializing
-    ? "Restoring the saved WhatsApp session and checking your workspace."
-    : ready
-      ? "Choose documents, review the order, and send them one at a time."
-      : connected
-        ? "Finish document folder setup before sending."
-        : "WhatsApp needs attention before documents can be sent.";
-
-  return (
-    <AppShell>
-      <div className="home-hero">
-        <div>
-          <p className="eyebrow">Office operations</p>
-          <h2>Good morning. Let&apos;s get work moving.</h2>
-          <p className="intro-copy">Prepare office documents, confirm the recipient, and send with a clear delivery trail.</p>
-        </div>
-        <div className={`workspace-health ${ready ? "ready" : initializing ? "loading" : "needs-attention"}`}>
-          <span className="status-dot" />
-          {ready ? "Workspace ready" : initializing ? "Starting workspace" : "Action required"}
-        </div>
-      </div>
-
-      {error && <div className="notice notice-error">{error}</div>}
-
-      {initializing && (
-        <section className="startup-card panel" aria-live="polite">
-          <div className="startup-spinner"><span className="spinner dark" /></div>
-          <div>
-            <p className="eyebrow">Workspace startup</p>
-            <h2>{status?.message ?? "Connecting to WhatsApp…"}</h2>
-            <p className="muted-text">Your saved session is being restored. This page will update automatically; no relinking is needed while it is loading.</p>
-          </div>
-          <span className="startup-pulse" aria-hidden="true" />
-        </section>
-      )}
-
-      <section className="module-grid" aria-label="Workspace modules">
-        <Link className={`module-card module-card-primary ${initializing ? "module-card-loading" : ""}`} href={senderHref} aria-disabled={initializing} onClick={(event) => { if (initializing) event.preventDefault(); }}>
-          <div className="module-card-top">
-            <span className="module-icon" aria-hidden="true">↗</span>
-            <span className={`status-pill ${ready ? "success" : initializing ? "neutral" : "warning"}`}>
-              <span className="status-dot" />
-              {ready ? "Ready" : initializing ? "Loading" : "Setup"}
-            </span>
-          </div>
-          <div>
-            <p className="eyebrow">Module 01</p>
-            <h3>WhatsApp bill sender</h3>
-            <p>{senderDetail}</p>
-          </div>
-          <span className="module-action">{ready ? "Open sender" : initializing ? "Waiting for WhatsApp" : "Open setup"} <span aria-hidden="true">→</span></span>
-        </Link>
-
-        <Link className="module-card module-card-secondary" href="/pouncha-sync">
-          <span className="module-icon" aria-hidden="true">⇄</span>
-          <div>
-            <p className="eyebrow">Daily sales sync</p>
-            <h3>Pouncha 26-27</h3>
-            <p>Append new BUSY Sale bills to the POUNCHA 26-27 Google Sheet every midnight, with a manual sync and Excel fallback.</p>
-          </div>
-          <span className="module-action">Open Pouncha sync <span aria-hidden="true">→</span></span>
-        </Link>
-
-        <Link className="module-card module-card-secondary" href="/settings">
-          <span className="module-icon" aria-hidden="true">⚙</span>
-          <div>
-            <p className="eyebrow">Workspace settings</p>
-            <h3>Manage folders and connection</h3>
-            <p>Review the WhatsApp link, import status, and local document sources.</p>
-          </div>
-          <span className="module-action">Open settings <span aria-hidden="true">→</span></span>
-        </Link>
-      </section>
-
-      <div className="home-summary">
-        <span><span className={`summary-dot ${connected ? "on" : "off"}`} /> WhatsApp {connected ? "ready" : initializing ? "starting" : "needs attention"}</span>
-        <span><span className={`summary-dot ${settings?.configured ? "on" : "off"}`} /> Document folders {settings?.configured ? "configured" : "incomplete"}</span>
-      </div>
-    </AppShell>
-  );
+  const senderHref = requiresSetup(status) || (connected && settings?.configured === false)
+    ? "/setup?returnTo=%2Fwhatsapp-bill-sender" : "/whatsapp-bill-sender";
+  return <AppShell>
+    <div className="home-hero">
+      <p className="eyebrow">Daily work</p>
+      <h1>What would you like to do?</h1>
+      <p className="intro-copy">Choose a task below. We will guide you through each step.</p>
+    </div>
+    {error && <div className="notice notice-error" role="alert">{error} You can still open a task and check its connection.</div>}
+    <section className="task-grid" aria-label="Choose a task">
+      <Link className="task-card" href={senderHref}>
+        <div className="task-card-top"><span className="task-icon"><Icon name="send" width="30" height="30" /></span><span className={`status-pill ${ready ? "success" : initializing ? "neutral" : "warning"}`}><span className="status-dot" />{ready ? "WhatsApp ready" : initializing ? "Connecting WhatsApp" : "Check WhatsApp"}</span></div>
+        <h2>Send bills on WhatsApp</h2>
+        <p>Find the bills and send them to one contact.</p>
+        <ol className="task-steps"><li>Choose the dates</li><li>Choose a contact</li><li>Check the bills and send</li></ol>
+        <span className="button button-primary">Open bill sender <Icon name="arrow" /></span>
+      </Link>
+      <Link className="task-card" href="/pouncha-sync">
+        <div className="task-card-top"><span className="task-icon green"><Icon name="sync" width="30" height="30" /></span><span className="status-pill neutral">Runs when you click</span></div>
+        <h2>Update Pouncha sheet</h2>
+        <p>Add new BUSY sales bills to your Google Sheet.</p>
+        <ol className="task-steps"><li>Check the last saved bill</li><li>Choose the dates</li><li>Click Update sheet</li></ol>
+        <span className="button button-primary">Open Pouncha <Icon name="arrow" /></span>
+      </Link>
+    </section>
+    <section className="home-help panel"><span className="help-icon"><Icon name="help" /></span><div><h2>Setting up this computer?</h2><p>Connect WhatsApp and choose the folders where your bills are saved.</p></div><Link className="button button-secondary" href="/settings">Open settings <Icon name="arrow" /></Link></section>
+    <div className="home-summary"><span><span className={`summary-dot ${connected ? "on" : "off"}`} />WhatsApp: {connected ? "Connected" : initializing ? "Connecting…" : "Needs attention"}</span><span><Icon name="folder" width="17" height="17" />Bill folders: {settings?.configured ? "Ready" : "Check settings"}</span></div>
+  </AppShell>;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { api, ApiError } from "@/lib/api/client";
@@ -43,6 +43,7 @@ export function DashboardPage() {
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [hasPreviewed, setHasPreviewed] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const previewRequest = useRef(0);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(false);
@@ -210,7 +211,8 @@ export function DashboardPage() {
     void api.listSendJobs()
       .then((jobs) => {
         if (cancelled) return;
-        const activeJob = jobs.find((candidate) => ["queued", "running"].includes(candidate.status));
+        const activeJob = jobs.find((candidate) => ["queued", "running"].includes(candidate.status))
+          ?? jobs.find((candidate) => candidate.status === "needs_review");
         if (activeJob) setJob(activeJob);
       })
       .catch(() => {
@@ -222,6 +224,8 @@ export function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    previewRequest.current += 1;
+    setPreviewLoading(false);
     setHasPreviewed(false);
     setDocuments([]);
     setPreviewError(null);
@@ -236,7 +240,7 @@ export function DashboardPage() {
   const workspaceReady = connected && Boolean(workspaceSettings?.configured) && status?.roots_synced !== false;
   const validFilters = isValidDateRange(dateRange) && documentTypes.length > 0;
   const activeJob = job && ["queued", "running"].includes(job.status);
-  const canSend = workspaceReady && hasPreviewed && documents.length > 0 && Boolean(selectedContact) && !activeJob;
+  const canSend = workspaceReady && hasPreviewed && !previewLoading && documents.length > 0 && Boolean(selectedContact) && !activeJob;
 
   useEffect(() => {
     if (redirectRequired) router.replace("/setup?returnTo=%2Fwhatsapp-bill-sender");
@@ -264,6 +268,7 @@ export function DashboardPage() {
 
   async function previewDocuments() {
     if (!validFilters) return;
+    const requestId = ++previewRequest.current;
     setPreviewLoading(true);
     setPreviewError(null);
     setHasPreviewed(true);
@@ -274,12 +279,14 @@ export function DashboardPage() {
         documentTypes,
       });
       // The backend already returns the authoritative date-by-date send order.
-      setDocuments(result);
+      if (requestId === previewRequest.current) setDocuments(result);
     } catch (error) {
-      setDocuments([]);
-      setPreviewError(errorMessage(error, "Documents could not be loaded."));
+      if (requestId === previewRequest.current) {
+        setDocuments([]);
+        setPreviewError(errorMessage(error, "Documents could not be loaded."));
+      }
     } finally {
-      setPreviewLoading(false);
+      if (requestId === previewRequest.current) setPreviewLoading(false);
     }
   }
 
@@ -359,9 +366,9 @@ export function DashboardPage() {
     <AppShell>
       <div className="dashboard-intro">
         <div>
-          <p className="eyebrow">Document dispatch</p>
-          <h2>Prepare a clean send</h2>
-          <p className="intro-copy">Find the right documents, review the order, and send them to one WhatsApp contact.</p>
+          <p className="eyebrow">WhatsApp sender</p>
+          <h2>Send bills on WhatsApp</h2>
+          <p className="intro-copy">Choose dates, choose a contact, then check and send your bills.</p>
         </div>
         <div className="date-stamp">
           <span>Today</span>
@@ -378,24 +385,13 @@ export function DashboardPage() {
         onRetry={() => void refreshConnection()}
       />
 
-      <BusySyncPanel
-        status={busyStatus}
-        loading={busyStatusLoading}
-        importing={busyImporting}
-        error={busyError}
-        message={busyMessage}
-        warnings={busyWarnings}
-        onImport={(file) => void importBusyLedger(file)}
-        onRefresh={() => void loadBusyStatus()}
-      />
-
       <div className="workspace-grid">
         <aside className="control-column">
           <section className="panel filter-panel" aria-labelledby="filters-heading">
             <div className="section-heading">
               <div>
                 <p className="eyebrow">Step 01</p>
-                <h2 id="filters-heading">Choose documents</h2>
+                <h2 id="filters-heading">Choose bills</h2>
               </div>
               <span className="step-number">1</span>
             </div>
@@ -415,7 +411,7 @@ export function DashboardPage() {
               disabled={!validFilters || previewLoading}
               onClick={() => void previewDocuments()}
             >
-              {previewLoading ? <><span className="spinner" /> Scanning…</> : <>Preview documents <span aria-hidden="true">↗</span></>}
+              {previewLoading ? <><span className="spinner" /> Scanning…</> : <>Find bills <span aria-hidden="true">↗</span></>}
             </button>
             {previewError && <p className="inline-error">{previewError}</p>}
           </section>
@@ -424,7 +420,7 @@ export function DashboardPage() {
             <div className="section-heading">
               <div>
                 <p className="eyebrow">Step 02</p>
-                <h2 id="recipient-heading">Choose recipient</h2>
+                <h2 id="recipient-heading">Choose a contact</h2>
               </div>
               <span className="step-number">2</span>
             </div>
@@ -444,7 +440,7 @@ export function DashboardPage() {
           <div className="section-heading preview-heading">
             <div>
               <p className="eyebrow">Step 03</p>
-              <h2 id="preview-heading">Preview &amp; send</h2>
+              <h2 id="preview-heading">Check and send</h2>
               <p className="muted-text">{previewSummary}</p>
             </div>
             {hasPreviewed && documents.length > 0 && <span className="count-badge">{documents.length} files</span>}
@@ -452,8 +448,7 @@ export function DashboardPage() {
 
           {hasPreviewed && documents.length > 0 && (
             <p className="order-note">
-              Oldest accounting date first. Within each date: Bills folder 1 → 2, CN folder 1 →
-              2, then DN folder 1 → 2. One date message is sent per date.
+              Bills are sent oldest first, one date at a time.
             </p>
           )}
           {hasPreviewed && documents.length > 0 && unverifiedCount > 0 && (
@@ -461,7 +456,7 @@ export function DashboardPage() {
               <strong>{unverifiedCount}</strong>{" "}
               {unverifiedCount === 1 ? "document uses a" : "documents use a"} file date because no
               printed voucher date could be read from the PDF. Check that the PDF has a text layer,
-              or import the optional BUSY register above.
+              or use the optional BUSY Excel check below.
             </p>
           )}
 
@@ -470,8 +465,8 @@ export function DashboardPage() {
               <div className="preview-art" aria-hidden="true">
                 <span className="art-back" /><span className="art-front" /><span className="art-line one" /><span className="art-line two" />
               </div>
-              <h3>Your ordered preview will appear here</h3>
-              <p>Use the filters on the left to scan your local document folders.</p>
+              <h3>Your bills will appear here</h3>
+              <p>Choose dates above and click Find bills.</p>
             </div>
           ) : (
             <DocumentPreviewTable
@@ -499,6 +494,17 @@ export function DashboardPage() {
           {sendError && <p className="inline-error send-error">{sendError}</p>}
         </section>
       </div>
+
+      <BusySyncPanel
+        status={busyStatus}
+        loading={busyStatusLoading}
+        importing={busyImporting}
+        error={busyError}
+        message={busyMessage}
+        warnings={busyWarnings}
+        onImport={(file) => void importBusyLedger(file)}
+        onRefresh={() => void loadBusyStatus()}
+      />
 
       {job && <JobProgress job={job} cancelling={cancelling} onCancel={() => void cancelJob()} />}
 

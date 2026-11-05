@@ -1,481 +1,149 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "@/components/layout/app-shell";
-import { api, ApiError } from "@/lib/api/client";
-import type { PounchaSyncRun, PounchaSyncStatus } from "@/lib/api/types";
-import { toDateInput } from "@/lib/date";
+import { Icon } from "@/components/layout/icons";
+import { displayDate } from "@/lib/date";
+import { api } from "@/lib/api/client";
+import type { PounchaRun, PounchaStatus } from "@/lib/api/types";
 
-function messageFor(error: unknown, fallback: string): string {
-  if (error instanceof ApiError) return error.message;
-  if (error instanceof Error && error.message) return error.message;
-  return fallback;
+const columns = ["Date", "Bill no.", "Party", "Transport", "Vehicle", "Station", "Narration"];
+const stages: Record<string, string> = {
+  preparing: "Reading the sheet", exporting: "Exporting the BUSY Sales ledger",
+  parsing: "Reading bill details", comparing: "Finding missing bills",
+  appending: "Appending new bills", verifying: "Verifying the saved rows", complete: "Complete",
+};
+
+function today() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
 
-function defaultDates(): { startDate: string; endDate: string } {
-  const end = new Date();
-  const start = new Date();
-  start.setDate(start.getDate() - 3);
-  return { startDate: toDateInput(start), endDate: toDateInput(end) };
-}
-
-function formatDateTime(value: string | null, timeZone = "Asia/Kolkata"): string {
-  if (!value) return "—";
-  const timestamp = Date.parse(value);
-  if (!Number.isFinite(timestamp)) return value;
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone,
-  }).format(new Date(timestamp));
-}
-
-function formatDate(value: string): string {
-  const timestamp = Date.parse(`${value}T00:00:00`);
-  if (!Number.isFinite(timestamp)) return value;
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(new Date(timestamp));
-}
-
-function triggerLabel(value: string): string {
-  switch (value) {
-    case "scheduled_midnight":
-      return "Midnight";
-    case "startup_catchup":
-      return "Catch-up";
-    case "manual_busy":
-      return "Manual BUSY";
-    case "manual_excel":
-      return "Excel upload";
-    default:
-      return value;
-  }
-}
-
-function statusLabel(status: PounchaSyncRun["status"]): string {
-  switch (status) {
-    case "success":
-      return "Success";
-    case "failed":
-      return "Failed";
-    case "skipped":
-      return "Skipped";
-    case "running":
-      return "Running";
-    case "queued":
-      return "Queued";
-    default:
-      return status;
-  }
-}
-
-function statusTone(status: PounchaSyncRun["status"]): string {
-  if (status === "success") return "success";
-  if (status === "failed") return "danger";
-  if (status === "skipped") return "warning";
-  return "neutral";
-}
-
-function isActive(run: PounchaSyncRun | null | undefined): boolean {
-  return Boolean(run && (run.status === "queued" || run.status === "running"));
+function errorText(error: unknown) {
+  return error instanceof Error ? error.message : "The sync request failed. Refresh the status before trying again.";
 }
 
 export function PounchaSyncPage() {
-  const [status, setStatus] = useState<PounchaSyncStatus | null>(null);
+  const [status, setStatus] = useState<PounchaStatus | null>(null);
+  const [run, setRun] = useState<PounchaRun | null>(null);
+  const [mode, setMode] = useState("continue");
+  const [source, setSource] = useState("busy");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState(today);
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [dates, setDates] = useState(defaultDates);
-  const [queuedRunId, setQueuedRunId] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [reviewed, setReviewed] = useState(false);
 
-  const load = useCallback(async () => {
+  const refresh = useCallback(async () => {
+    setLoading(true);
     try {
-      const next = await api.getPounchaStatus();
-      setStatus(next);
+      const value = await api.getPounchaStatus();
+      setStatus(value);
+      setRun((current) => current ?? value.recent_runs[0] ?? null);
       setError(null);
-      if (queuedRunId) {
-        const finished = next.recent_runs.find(
-          (run) => run.run_id === queuedRunId && !isActive(run),
-        );
-        if (finished) {
-          setMessage(
-            finished.status === "success"
-              ? `Sync complete: ${finished.appended_count} new bill${
-                  finished.appended_count === 1 ? "" : "s"
-                } added to POUNCHA 26-27.`
-              : `Sync ${statusLabel(finished.status).toLowerCase()}: ${
-                  finished.error_message ?? "No detail was recorded."
-                }`,
-          );
-          setQueuedRunId(null);
-        }
-      }
-    } catch (loadError) {
-      setError(messageFor(loadError, "Pouncha sync status could not be loaded."));
-    } finally {
-      setLoading(false);
-    }
-  }, [queuedRunId]);
+    } catch (reason) { setError(errorText(reason)); }
+    finally { setLoading(false); }
+  }, []);
+
+  // Reading status never exports from BUSY or queues a sync.
+  useEffect(() => { void refresh(); }, [refresh]);
 
   useEffect(() => {
+    if (!run || !["queued", "running"].includes(run.status)) return;
     let cancelled = false;
-    void load();
-    const timer = window.setInterval(() => {
-      if (!cancelled) void load();
-    }, 4000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
+    let timer: number;
+    const poll = async () => {
+      try {
+        const next = await api.getPounchaRun(run.run_id);
+        if (cancelled) return;
+        setRun(next);
+        if (["queued", "running"].includes(next.status)) timer = window.setTimeout(() => void poll(), 1500);
+        else void refresh();
+      } catch (reason) {
+        if (!cancelled) {
+          setError(errorText(reason));
+          timer = window.setTimeout(() => void poll(), 3000);
+        }
+      }
     };
-  }, [load]);
+    timer = window.setTimeout(() => void poll(), 1000);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [run?.run_id, run?.status, refresh]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function syncNow() {
-    setSubmitting(true);
+  const active = status?.recent_runs.find((item) => ["queued", "running", "needs_review"].includes(item.status));
+  const blocked = busy || loading || Boolean(active) || Boolean(run && ["queued", "running", "needs_review"].includes(run.status));
+  const chosenStart = mode === "custom" ? start : status?.last_date ?? "";
+  const valid = Boolean(chosenStart && end && chosenStart <= end && end <= today() && (source === "busy" || file));
+
+  async function submit(preview: boolean) {
+    if (!valid || blocked) return;
+    setBusy(true);
     setError(null);
-    setMessage(null);
+    setReviewed(false);
     try {
-      const queued = await api.runPounchaSync({
-        start_date: dates.startDate,
-        end_date: dates.endDate,
-      });
-      setQueuedRunId(queued.run_id);
-      setMessage("Sync queued. BUSY 21 is being driven in the background.");
-      await load();
-    } catch (syncError) {
-      setError(messageFor(syncError, "The Pouncha sync could not be queued."));
-    } finally {
-      setSubmitting(false);
-    }
+      const payload = { start_date: mode === "custom" ? start : undefined, end_date: end, preview_only: preview };
+      const next = source === "upload" && file ? await api.uploadPouncha(file, payload) : await api.runPouncha(payload);
+      setRun(next);
+    } catch (reason) { setError(errorText(reason)); void refresh(); }
+    finally { setBusy(false); }
   }
 
-  async function upload(file: File) {
-    setUploading(true);
+  async function review(release: boolean) {
+    if (!run) return;
+    setBusy(true);
     setError(null);
-    setMessage(null);
     try {
-      const run = await api.uploadPounchaExcel(file, {
-        startDate: dates.startDate,
-        endDate: dates.endDate,
-      });
-      setMessage(
-        run.status === "success"
-          ? `Upload complete: ${run.appended_count} new bill${
-              run.appended_count === 1 ? "" : "s"
-            } added to POUNCHA 26-27.`
-          : `Upload ${statusLabel(run.status).toLowerCase()}: ${
-              run.error_message ?? "No detail was recorded."
-            }`,
-      );
-      await load();
-    } catch (uploadError) {
-      setError(
-        messageFor(uploadError, "The sales ledger workbook could not be uploaded."),
-      );
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
+      if (release) {
+        await api.releasePouncha(run.run_id);
+        setRun(await api.getPounchaRun(run.run_id));
+      } else setRun(await api.verifyPouncha(run.run_id));
+      await refresh();
+    } catch (reason) { setError(errorText(reason)); }
+    finally { setBusy(false); }
   }
 
-  const configured = Boolean(status?.configured);
-  const uploadConfigured = Boolean(status?.upload_configured);
-  const active = isActive(status?.active_run);
-  const waitingForBusy = Boolean(status?.scheduler.waiting_for_busy);
-  const lastSuccess = status?.recent_runs.find((run) => run.status === "success");
-  const recentRuns = status?.recent_runs.slice(0, 5) ?? [];
-
-  const badge = !status?.sync_enabled
-    ? { tone: "warning", label: "Sync disabled" }
-    : !status.sheets_configured
-      ? { tone: "warning", label: "Setup required" }
-      : !status.busy_configured
-        ? { tone: "warning", label: "BUSY automation unavailable" }
-        : !status.busy_calibrated
-          ? { tone: "warning", label: "Calibration required" }
-          : waitingForBusy
-            ? { tone: "warning", label: "Waiting for BUSY 21" }
-            : active
-              ? { tone: "neutral", label: "Sync running" }
-              : { tone: "success", label: "Ready" };
-
-  return (
-    <AppShell>
-      <div className="pouncha-header">
-        <div>
-          <p className="eyebrow">Daily sales sync</p>
-          <h2>Pouncha 26-27</h2>
-          <p className="intro-copy">
-            Pull every BUSY Sale bill from the Account Ledger into the
-            <strong> POUNCHA 26-27 </strong>
-            Google Sheet. Existing bill numbers and Column H remarks are never
-            touched.
-          </p>
+  const running = Boolean(run && ["queued", "running"].includes(run.status));
+  const resultTitle = !run ? "" : running ? (run.preview_only ? "Preparing your preview…" : "Updating your sheet…")
+    : run.status === "success" ? (run.preview_only ? "Preview is ready" : run.appended_count ? "Pouncha sheet updated" : "Your sheet is up to date")
+    : run.status === "needs_review" ? "Check the sheet before trying again" : run.status === "reviewed" ? "Review completed" : "The update could not finish";
+  return <AppShell>
+    <div className="dashboard-intro"><div><p className="eyebrow">Google Sheets</p><h2>Update Pouncha sheet</h2><p className="intro-copy">Choose the dates. We will add the missing sales bills from BUSY.</p></div><span className="status-pill neutral">Only runs when you click</span></div>
+    {error && <div className="notice notice-error" role="alert">{error}</div>}
+    <div className="pouncha-layout">
+      <section className="panel pouncha-card" aria-labelledby="sync-options">
+        <div className="section-heading"><div><p className="eyebrow">Step 1</p><h2 id="sync-options">Which bills should we check?</h2></div><span className="step-number">1</span></div>
+        <fieldset className="choice-group"><legend>Choose a date range</legend>
+          <label className="choice-card"><input type="radio" name="sync-range" checked={mode === "continue"} disabled={blocked} onChange={() => setMode("continue")} /><span><strong>Continue from the last update</strong><small>Recommended. Bills already in the sheet will be skipped.</small></span></label>
+          <label className="choice-card"><input type="radio" name="sync-range" checked={mode === "custom"} disabled={blocked} onChange={() => setMode("custom")} /><span><strong>Choose different dates</strong><small>Use this to check older bills or a specific period.</small></span></label>
+        </fieldset>
+        <div className="pouncha-fields">
+          {mode === "custom" ? <label>From<input type="date" value={start} disabled={blocked} onChange={(event) => setStart(event.target.value)} max={end} /></label> : <label>Starting from<input type="text" value={status?.last_date ? displayDate(status.last_date) : loading ? "Checking the sheet…" : "Choose different dates"} readOnly disabled /></label>}
+          <label>Up to this date<input type="date" value={end} disabled={blocked} onChange={(event) => setEnd(event.target.value)} max={today()} /></label>
         </div>
-        <span className={`status-pill ${badge.tone}`}>
-          <span className="status-dot" />
-          {badge.label}
-        </span>
-      </div>
-
-      {error && <div className="notice notice-error">{error}</div>}
-      {message && <div className="notice notice-success">{message}</div>}
-
-      {loading && !status ? (
-        <section className="panel pouncha-loading">
-          <span className="spinner dark" />
-          <span>Checking the scheduler and recent runs…</span>
-        </section>
-      ) : (
-        <>
-          <section className="pouncha-metrics" aria-label="Sync status">
-            <div className="panel pouncha-metric">
-              <span>Next auto-sync</span>
-              <strong>
-                {status?.scheduler.enabled
-                  ? formatDateTime(status.scheduler.next_run_at)
-                  : "Disabled"}
-              </strong>
-              <small>Daily at 12:00 AM IST · 3-day lookback</small>
-            </div>
-            <div className="panel pouncha-metric">
-              <span>Last successful sync</span>
-              <strong>
-                {lastSuccess
-                  ? `${lastSuccess.appended_count} new bill${
-                      lastSuccess.appended_count === 1 ? "" : "s"
-                    }`
-                  : "No sync yet"}
-              </strong>
-              <small>
-                {lastSuccess
-                  ? formatDateTime(lastSuccess.completed_at)
-                  : "The first run will append the current window."}
-              </small>
-            </div>
-            <div className="panel pouncha-metric">
-              <span>Google Sheet</span>
-              <strong>{status?.sheets_configured ? "Connected" : "Not configured"}</strong>
-              <small>POUNCHA 26-27 · Columns A–G only</small>
-            </div>
-            <div className="panel pouncha-metric">
-              <span>Scheduler</span>
-              <strong>
-                {status?.scheduler.running
-                  ? "Running"
-                  : status?.scheduler.enabled
-                    ? "Starting"
-                    : "Off"}
-              </strong>
-              <small>
-                {waitingForBusy
-                  ? "BUSY 21 is closed; retrying every 15 minutes."
-                  : status?.scheduler.last_error
-                    ? status.scheduler.last_error
-                    : "Startup catch-up is enabled."}
-              </small>
-            </div>
-          </section>
-
-          {!configured && (
-            <section className="panel pouncha-setup">
-              <div>
-                <p className="eyebrow">One-time setup</p>
-                <h3>Connect the Google Sheet and BUSY recipe</h3>
-              </div>
-              <ol>
-                <li>
-                  Save the Google service-account JSON at
-                  <code>backend/config/google_service_account.json</code>.
-                </li>
-                <li>
-                  Share the <strong>POUNCHA 26-27</strong> Google Sheet with the
-                  service-account <code>client_email</code> as Editor.
-                </li>
-                <li>
-                  Set <code>POUNCHA_SPREADSHEET_ID</code> in{" "}
-                  <code>backend/.env</code> and restart the backend.
-                </li>
-                <li>
-                  Calibrate the Account Ledger recipe with BUSY 21 open before
-                  using <strong>Sync Now from BUSY</strong>.
-                </li>
-              </ol>
-            </section>
-          )}
-
-          <section className="pouncha-actions">
-            <div className="panel pouncha-action-card">
-              <div>
-                <p className="eyebrow">Primary</p>
-                <h3>Sync now from BUSY</h3>
-                <p className="muted-text">
-                  Drives BUSY 21 through the Account Ledger Sales recipe. The
-                  backend exports a temporary workbook, appends only new bill
-                  numbers, and deletes the export.
-                </p>
-              </div>
-              <div className="pouncha-date-row">
-                <label>
-                  <span>Start date</span>
-                  <input
-                    type="date"
-                    value={dates.startDate}
-                    max={dates.endDate}
-                    onChange={(event) =>
-                      setDates((current) => ({
-                        ...current,
-                        startDate: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  <span>End date</span>
-                  <input
-                    type="date"
-                    value={dates.endDate}
-                    min={dates.startDate}
-                    onChange={(event) =>
-                      setDates((current) => ({
-                        ...current,
-                        endDate: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-              </div>
-              <button
-                type="button"
-                className="button button-primary"
-                onClick={() => void syncNow()}
-                disabled={!configured || active || submitting}
-              >
-                {submitting || active ? "Sync in progress…" : "Sync Now from BUSY"}
-              </button>
-              {!configured && (
-                <p className="pouncha-hint">
-                  {!status?.sheets_configured
-                    ? "Configure Google Sheets above to enable the manual sync."
-                    : !status.busy_calibrated
-                      ? "Calibrate the Account Ledger Sales recipe before syncing from BUSY."
-                      : "Pouncha sync is not enabled."}
-                </p>
-              )}
-            </div>
-
-            <div className="panel pouncha-action-card">
-              <div>
-                <p className="eyebrow">Fallback</p>
-                <h3>Upload sales ledger Excel</h3>
-                <p className="muted-text">
-                  Already have <code>AccountLedger_Sales.xlsx</code>? Upload it
-                  to run the same parser, deduplication, and local archive
-                  without touching the BUSY window.
-                </p>
-              </div>
-              <label className={`pouncha-dropzone ${uploading ? "uploading" : ""}`}>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx,.xlsm"
-                  disabled={!uploadConfigured || uploading}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) void upload(file);
-                  }}
-                />
-                <span className="pouncha-dropzone-icon" aria-hidden="true">
-                  ↑
-                </span>
-                <strong>
-                  {uploading ? "Uploading and appending…" : "Choose an .xlsx file"}
-                </strong>
-                <span>BUSY Account Ledger Sales export</span>
-              </label>
-              <p className="pouncha-hint">
-                The upload is deleted after parsing. The local archive is written
-                when <code>POUNCHA_LOCAL_EXCEL_PATH</code> is set.
-              </p>
-            </div>
-          </section>
-
-          <section className="panel pouncha-runs">
-            <div className="pouncha-runs-heading">
-              <div>
-                <p className="eyebrow">Audit trail</p>
-                <h3>Last 5 sync runs</h3>
-              </div>
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => void load()}
-              >
-                Refresh
-              </button>
-            </div>
-            {recentRuns.length === 0 ? (
-              <p className="muted-text">
-                No Pouncha sync has run yet. The midnight scheduler will create
-                the first audit row after BUSY 21 is available.
-              </p>
-            ) : (
-              <div className="table-wrap">
-                <table className="document-table pouncha-table">
-                  <thead>
-                    <tr>
-                      <th>Date range</th>
-                      <th>Trigger</th>
-                      <th>Bills found</th>
-                      <th>New bills added</th>
-                      <th>Status</th>
-                      <th>Completed</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentRuns.map((run) => (
-                      <tr key={run.run_id}>
-                        <td>
-                          {formatDate(run.start_date)} – {formatDate(run.end_date)}
-                        </td>
-                        <td>{triggerLabel(run.trigger_type)}</td>
-                        <td>{run.exported_sale_count}</td>
-                        <td>
-                          <strong>{run.appended_count}</strong>
-                          {run.already_in_sheet_count > 0 && (
-                            <small className="pouncha-already">
-                              {run.already_in_sheet_count} already present
-                            </small>
-                          )}
-                        </td>
-                        <td>
-                          <span className={`status-pill ${statusTone(run.status)}`}>
-                            {statusLabel(run.status)}
-                          </span>
-                          {run.error_message && (
-                            <small className="pouncha-run-error">
-                              {run.error_message}
-                            </small>
-                          )}
-                        </td>
-                        <td>{formatDateTime(run.completed_at)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        </>
-      )}
-    </AppShell>
-  );
+        {chosenStart && end && chosenStart > end && <p className="field-error" role="alert">The end date must be the same as or after the start date.</p>}
+        {source === "upload" && <label className="pouncha-upload">Choose the original BUSY Excel export (.xlsx)<input type="file" accept=".xlsx" disabled={blocked} onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label>}
+        <div className="pouncha-primary-action"><button className="button button-primary" disabled={blocked || !valid || Boolean(status?.sheet_error)} onClick={() => void submit(false)}>{busy ? <><span className="spinner" /> Starting…</> : <><Icon name="sync" /> Update sheet</>}</button><p>{running ? "An update is in progress. Please wait." : run?.status === "needs_review" || active?.status === "needs_review" ? "Resolve the review below before another update." : "Keep BUSY open and let the update finish before using its window."}</p></div>
+        <details className="advanced-options"><summary>More options: preview or use an Excel file</summary><label className="field-label" htmlFor="sync-source">Get bills from</label><select id="sync-source" value={source} disabled={blocked} onChange={(event) => setSource(event.target.value)}><option value="busy">BUSY on this computer</option><option value="upload">An exported Excel file</option></select><button className="button button-secondary" disabled={blocked || !valid || Boolean(status?.sheet_error)} onClick={() => void submit(true)}>Preview without updating the sheet</button></details>
+      </section>
+      <aside className="panel pouncha-card pouncha-sheet-card" aria-label="Current sheet status">
+        <div className="pouncha-row"><h3>Already in your sheet</h3><span className={`status-pill ${status?.sheet_error ? "warning" : status ? "success" : "neutral"}`}>{loading ? "Checking…" : status?.sheet_error ? "Check connection" : status ? "Connected" : "Not connected"}</span></div>
+        {status?.sheet_error ? <p className="inline-error">{status.sheet_error}</p> : <dl className="sheet-summary"><div><dt>Last bill number</dt><dd>{status?.last_bill ?? "—"}</dd></div><div><dt>Latest bill date</dt><dd>{status?.last_date ? displayDate(status.last_date) : "—"}</dd></div><div><dt>Total bills saved</dt><dd>{status?.bill_count?.toLocaleString("en-IN") ?? "—"}</dd></div></dl>}
+        <p className="sheet-note">Existing bills and your remarks stay in place. We only add missing bills.</p>
+        {status && <a href={status.sheet_url} target="_blank" rel="noreferrer">Open POUNCHA 26-27 <Icon name="arrow" width="17" height="17" /></a>}
+        <div><button className="button button-quiet" disabled={loading || busy} onClick={() => void refresh()}>{loading ? "Checking sheet…" : "Check sheet again"}</button></div>
+      </aside>
+    </div>
+    {run && <section className="panel pouncha-card" aria-live="polite" aria-busy={running}>
+      <div className="pouncha-result-title"><span className={`result-icon ${run.status}`}>{running ? <span className="spinner dark" /> : run.status === "success" ? <Icon name="check" /> : <Icon name="help" />}</span><div><h2>{resultTitle}</h2><p className="muted-text">{run.start_date ? displayDate(run.start_date) : "Last saved date"} to {displayDate(run.end_date)}{run.preview_only ? " · Preview only" : ""}</p></div></div>
+      {running && <div className="result-progress">{stages[run.stage] ?? "Working…"}<p className="muted-text">Please leave BUSY and the keyboard alone until this is finished.</p></div>}
+      <div className="pouncha-metrics run-metrics"><div><span>Bills checked</span><strong>{run.exported_count}</strong></div><div><span>Already saved</span><strong>{run.existing_count}</strong></div><div><span>New bills found</span><strong>{run.new_count}</strong></div><div><span>Added to sheet</span><strong>{run.appended_count}</strong></div></div>
+      {run.error && <div className="notice notice-error" role="alert"><strong>What to do next</strong><p>{run.error}</p>{run.status === "failed" && <p>After fixing the problem, use Update sheet above to try again.</p>}</div>}
+      {run.status === "success" && <div className="notice notice-success">{run.preview_only ? "Nothing was changed. Check the new bills below, then use Update sheet when you are ready." : run.appended_count ? `All done. ${run.appended_count} new bills were added and checked.` : "No missing bills were found for these dates."}</div>}
+      {run.warnings.length > 0 && <details><summary>{run.warnings.length} existing bills need a check</summary><p className="muted-text">These bills have different details. Their saved rows were not changed.</p><ul>{run.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></details>}
+      {run.status === "needs_review" && <div className="notice notice-error"><p>Some bills may already have been saved. Check the Google Sheet before starting again.</p><button className="button button-secondary" disabled={busy} onClick={() => void review(false)}>Check whether the bills were saved</button><details><summary>I checked the sheet myself</summary><label className="pouncha-review"><input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} /> I have checked the sheet and want to allow another update.</label><button className="button button-danger-quiet" disabled={busy || !reviewed} onClick={() => void review(true)}>Finish review and allow updates</button></details></div>}
+      {run.preview.length > 0 && <details open={run.preview_only}><summary>View new bills{run.new_count > 100 ? " (first 100)" : ""}</summary><div className="pouncha-table-wrap"><table className="pouncha-table"><thead><tr>{columns.map((column) => <th key={column} scope="col">{column}</th>)}</tr></thead><tbody>{run.preview.map((row) => <tr key={row[1]}>{row.map((cell, index) => <td key={index}>{cell || "—"}</td>)}</tr>)}</tbody></table></div></details>}
+    </section>}
+    {status && status.recent_runs.length > 0 && <details className="panel pouncha-card"><summary>Previous updates ({status.recent_runs.length})</summary><ul className="pouncha-history">{status.recent_runs.map((item) => <li key={item.run_id}><button disabled={busy || running} onClick={() => { setRun(item); setReviewed(false); }}><span><strong>{item.start_date ? displayDate(item.start_date) : "Continue"} to {displayDate(item.end_date)}</strong><small>{item.preview_only ? "Preview" : `${item.appended_count} bills added`}</small></span><span className={`status-pill ${item.status === "success" ? "success" : item.status === "failed" || item.status === "needs_review" ? "warning" : "neutral"}`}>{item.status === "success" ? "Completed" : item.status === "failed" ? "Not completed" : item.status === "needs_review" ? "Check needed" : item.status === "reviewed" ? "Reviewed" : "In progress"}</span></button></li>)}</ul></details>}
+  </AppShell>;
 }

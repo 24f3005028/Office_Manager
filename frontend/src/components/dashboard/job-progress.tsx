@@ -30,7 +30,7 @@ export function JobProgress({ job, cancelling, onCancel }: JobProgressProps) {
           <p className="eyebrow">Send job</p>
           <h2 id="job-heading">{statusCopy(job.status)}</h2>
         </div>
-        <span className={`job-status ${job.status}`}><span className="status-dot" />{job.status}</span>
+        <span className={`job-status ${job.status}`}><span className="status-dot" />{statusCopy(job.status)}</span>
       </div>
       <div className="progress-meta">
         <span>{sent} of {job.files.length} sent</span>
@@ -56,7 +56,7 @@ export function JobProgress({ job, cancelling, onCancel }: JobProgressProps) {
       {needsReview && <p className="review-note">A WhatsApp response was lost after a send may have started. This job is paused to prevent duplicate documents.</p>}
       {active && (
         <button className="button button-danger-quiet" type="button" onClick={onCancel} disabled={cancelling}>
-          {cancelling ? "Cancelling…" : "Cancel send job"}
+          {cancelling ? "Cancelling…" : "Stop sending"}
         </button>
       )}
     </section>

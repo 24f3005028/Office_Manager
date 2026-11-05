@@ -7,12 +7,11 @@ import type {
   DocumentRecord,
   DocumentType,
   HealthResponse,
-  PounchaSyncQueued,
-  PounchaSyncRun,
-  PounchaSyncStatus,
   SendJob,
   WhatsappStatus,
   WorkspaceSettings,
+  PounchaRun,
+  PounchaStatus,
 } from "./types";
 
 export const API_BASE_URL = (
@@ -81,6 +80,22 @@ export function normalizeDocumentType(category: string): DocumentType | string {
 }
 
 export const api = {
+  getPounchaStatus: () => request<PounchaStatus>("/api/pouncha-sync/status"),
+  getPounchaRun: (id: string) => request<PounchaRun>(`/api/pouncha-sync/runs/${encodeURIComponent(id)}`),
+  runPouncha: (payload: { start_date?: string; end_date: string; preview_only: boolean }) =>
+    request<PounchaRun>("/api/pouncha-sync/run", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    }),
+  uploadPouncha: (file: File, payload: { start_date?: string; end_date: string; preview_only: boolean }) => {
+    const body = new FormData();
+    body.append("file", file);
+    body.append("end_date", payload.end_date);
+    body.append("preview_only", String(payload.preview_only));
+    if (payload.start_date) body.append("start_date", payload.start_date);
+    return request<PounchaRun>("/api/pouncha-sync/upload", { method: "POST", body });
+  },
+  verifyPouncha: (id: string) => request<PounchaRun>(`/api/pouncha-sync/runs/${encodeURIComponent(id)}/verify`, { method: "POST" }),
+  releasePouncha: (id: string) => request<{ released: boolean }>(`/api/pouncha-sync/runs/${encodeURIComponent(id)}/release`, { method: "POST" }),
   getHealth: () => request<HealthResponse>("/api/health"),
   getWhatsappStatus: () => request<WhatsappStatus>("/api/whatsapp/status"),
   startWhatsapp: () => request<WhatsappStatus>("/api/whatsapp/start", { method: "POST" }),
@@ -117,28 +132,6 @@ export const api = {
   },
   getSettings: () => request<WorkspaceSettings>("/api/settings"),
   getBusyLedgerStatus: () => request<BusyLedgerStatus>("/api/busy-ledger/status"),
-  getPounchaStatus: () => request<PounchaSyncStatus>("/api/pouncha-sync/status"),
-  getPounchaRun: (runId: string) =>
-    request<PounchaSyncRun>(`/api/pouncha-sync/runs/${encodeURIComponent(runId)}`),
-  runPounchaSync: (payload?: { start_date?: string; end_date?: string }) =>
-    request<PounchaSyncQueued>("/api/pouncha-sync/run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload ?? {}),
-    }),
-  uploadPounchaExcel: (
-    file: File,
-    options?: { startDate?: string; endDate?: string },
-  ) => {
-    const body = new FormData();
-    body.append("file", file);
-    if (options?.startDate) body.append("start_date", options.startDate);
-    if (options?.endDate) body.append("end_date", options.endDate);
-    return request<PounchaSyncRun>("/api/pouncha-sync/upload-excel", {
-      method: "POST",
-      body,
-    });
-  },
   importBusyLedger: (
     file?: File | null,
     options?: { category?: DocumentCategory; dryRun?: boolean },

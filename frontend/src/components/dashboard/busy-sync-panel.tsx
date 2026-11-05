@@ -85,10 +85,10 @@ export function BusySyncPanel({
           aria-controls="busy-sync-body"
         >
           <span className="busy-sync-heading-copy">
-            <span className="eyebrow">Ledger cross-check</span>
+            <span className="eyebrow">Optional check</span>
             <span className="busy-sync-title-row">
               <span className="busy-sync-title">
-                BUSY Ledger Cross-Check &amp; Sync (Optional)
+                Check bill dates with a BUSY Excel file
               </span>
               <span className={`busy-sync-pill${indexed > 0 ? " ready" : ""}`}>
                 {statusPill}
