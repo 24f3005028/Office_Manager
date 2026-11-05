@@ -90,6 +90,15 @@ the bridge accepts either shape in its receipt. Run the checks without writing w
 
 ## Checks
 
+For daily use, run the root `Start-Office.cmd` or the **Office WhatsApp Sender** desktop
+shortcut. It runs the compiled bridge using Node, restores the existing session, and starts
+the backend and production frontend. Run `bun run dev` only when developing the bridge.
+
+The pinned WhatsApp SDK and its existing compatibility patches are retained. Security
+overrides in `package.json` update vulnerable transitive packages. `.puppeteerrc.cjs` disables
+automatic browser archive downloads because this workflow uses installed Chrome. The upstream
+`extract-zip` dependency still has two unresolved advisories; see the root `REVIEW.md`.
+
 ```powershell
 bun run typecheck
 bun run test

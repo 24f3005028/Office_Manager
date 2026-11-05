@@ -10,6 +10,7 @@ backend/.pytest_cache/
 backend/.mypy_cache/
 backend/.ruff_cache/
 data/
+tmp/
 
 # Node / Next.js
 frontend/node_modules/
@@ -23,6 +24,8 @@ whatsapp-bridge/.wwebjs_cache/
 whatsapp-bridge/.env
 
 # Local tooling
+.pytest_cache/
+frontend/tsconfig.tsbuildinfo
 .DS_Store
 Thumbs.db
 *.log
