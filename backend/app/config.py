@@ -101,79 +101,23 @@ class Settings(BaseSettings):
         default=DEFAULT_SERIES_ALIASES, validation_alias="BUSY_SERIES_ALIASES"
     )
     busy_financial_year: str = Field(default="26-27", validation_alias="BUSY_FINANCIAL_YEAR")
-    pdf_date_extraction: bool = Field(
-        default=True, validation_alias="PDF_DATE_EXTRACTION"
-    )
-    pdf_date_min_date: date | None = Field(
-        default=None, validation_alias="PDF_DATE_MIN_DATE"
-    )
-    pdf_date_max_date: date | None = Field(
-        default=None, validation_alias="PDF_DATE_MAX_DATE"
-    )
-    busy_executable_path: Path = Field(
-        default=Path(r"C:\BusyWin\Busy21.exe"),
-        validation_alias="BUSY_EXECUTABLE_PATH",
-    )
-    busy_window_title_re: str = Field(
-        default=r"^Busy\s+21\s+Rel\b", validation_alias="BUSY_WINDOW_TITLE_RE"
-    )
-    busy_expected_company_substring: str = Field(
-        default="H.S. Traders", validation_alias="BUSY_EXPECTED_COMPANY_SUBSTRING"
-    )
-    busy_automation_timeout_seconds: float = Field(
-        default=60.0, gt=0, validation_alias="BUSY_AUTOMATION_TIMEOUT_SECONDS"
-    )
-    busy_min_user_idle_seconds: float = Field(
-        default=3.0, ge=0, validation_alias="BUSY_MIN_USER_IDLE_SECONDS"
-    )
-    busy_ui_profile_path: Path = Field(
-        default_factory=lambda: BACKEND_DIR / "config" / "busy_ui_profile.json",
-        validation_alias="BUSY_UI_PROFILE_PATH",
-    )
-    busy_lock_path: Path = Field(
-        default_factory=lambda: BACKEND_DIR / "data" / "busy_automation.lock",
-        validation_alias="BUSY_LOCK_PATH",
-    )
-    busy_automation_temp_dir: Path = Field(
-        default_factory=lambda: BACKEND_DIR / "data" / "busy_automation",
-        validation_alias="BUSY_AUTOMATION_TEMP_DIR",
-    )
-    pouncha_spreadsheet_id: str = Field(
-        default="", validation_alias="POUNCHA_SPREADSHEET_ID"
-    )
-    pouncha_sheet_tab_name: str = Field(
-        default="POUNCHA 26-27", validation_alias="POUNCHA_SHEET_TAB_NAME"
-    )
-    google_service_account_file: Path = Field(
-        default_factory=lambda: BACKEND_DIR / "config" / "google_service_account.json",
-        validation_alias="GOOGLE_SERVICE_ACCOUNT_FILE",
-    )
-    pouncha_local_excel_path: Path | None = Field(
-        default=None, validation_alias="POUNCHA_LOCAL_EXCEL_PATH"
-    )
-    pouncha_sync_enabled: bool = Field(
-        default=True, validation_alias="POUNCHA_SYNC_ENABLED"
-    )
-    pouncha_sync_lookback_days: int = Field(
-        default=3, ge=1, le=31, validation_alias="POUNCHA_SYNC_LOOKBACK_DAYS"
-    )
-    pouncha_catchup_interval_minutes: int = Field(
-        default=15, ge=1, le=1440, validation_alias="POUNCHA_CATCHUP_INTERVAL_MINUTES"
-    )
-    pouncha_timezone: str = Field(
-        default="Asia/Kolkata", validation_alias="POUNCHA_TIMEZONE"
-    )
-    pouncha_lock_path: Path = Field(
-        default_factory=lambda: BACKEND_DIR / "data" / "pouncha_sync.lock",
-        validation_alias="POUNCHA_LOCK_PATH",
-    )
-    pouncha_upload_dir: Path = Field(
-        default_factory=lambda: BACKEND_DIR / "data" / "pouncha_uploads",
-        validation_alias="POUNCHA_UPLOAD_DIR",
-    )
+    pdf_date_extraction: bool = Field(default=True, validation_alias="PDF_DATE_EXTRACTION")
+    pdf_date_min_date: date | None = Field(default=None, validation_alias="PDF_DATE_MIN_DATE")
+    pdf_date_max_date: date | None = Field(default=None, validation_alias="PDF_DATE_MAX_DATE")
     whatsapp_bridge_url: str = Field(
         default="http://127.0.0.1:3001", validation_alias="WHATSAPP_BRIDGE_URL"
     )
+    pouncha_spreadsheet_id: str = "1Ukd4bteeJryu8wW7hDdQVOaIwG0B6V2qLOKYu-GbcZ0"
+    pouncha_sheet_tab_name: str = "POUNCHA 26-27"
+    google_service_account_file: Path = BACKEND_DIR / "config" / "google_service_account.json"
+    pouncha_company: str = "H.S. TRADERS"
+    pouncha_export_timeout_seconds: float = Field(default=90, ge=10, le=300)
+
+    @property
+    def pouncha_credentials_path(self) -> Path:
+        path = self.google_service_account_file
+        return path if path.is_absolute() else BACKEND_DIR / path
+
     bridge_timeout_seconds: float = Field(
         default=30.0, gt=0, validation_alias="BRIDGE_TIMEOUT_SECONDS"
     )
@@ -204,15 +148,6 @@ class Settings(BaseSettings):
         text = str(value).strip()
         return text or "26-27"
 
-    @field_validator("pouncha_local_excel_path", mode="before")
-    @classmethod
-    def normalize_optional_path(cls, value: Any) -> Any:
-        if value is None:
-            return None
-        if isinstance(value, str) and not value.strip():
-            return None
-        return value
-
     def roots_for(self, category: str) -> tuple[Path, ...]:
         values = {
             "bills": self.bills_roots,
@@ -227,9 +162,7 @@ class Settings(BaseSettings):
 
     @property
     def ignored_directory_names(self) -> frozenset[str]:
-        return frozenset(
-            item.casefold() for item in _split_values(self.busy_ignored_directories)
-        )
+        return frozenset(item.casefold() for item in _split_values(self.busy_ignored_directories))
 
     @property
     def series_alias_map(self) -> dict[str, str]:

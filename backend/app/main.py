@@ -12,7 +12,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.api.routes import busy_ledger as busy_ledger_routes
 from app.api.routes import documents, health, send_jobs, whatsapp
-from app.api.routes import pouncha_sync as pouncha_sync_routes
+from app.api.routes import pouncha_sync as pouncha_routes
 from app.api.routes import settings as settings_routes
 from app.config import Settings
 from app.db import Database
@@ -21,9 +21,9 @@ from app.domains.busy_ledger.service import BusyLedgerService
 from app.domains.documents.pdf_dates import PdfDateResolver
 from app.domains.documents.scanner import DocumentScanner
 from app.domains.documents.service import DocumentService
-from app.domains.pouncha_sync.repository import PounchaSyncRepository
-from app.domains.pouncha_sync.scheduler import PounchaSyncScheduler
-from app.domains.pouncha_sync.service import create_pouncha_sync_service
+from app.domains.pouncha_sync.busy import BusyExporter
+from app.domains.pouncha_sync.repository import RunRepository
+from app.domains.pouncha_sync.service import PounchaService
 from app.domains.send_jobs.repository import SendJobRepository
 from app.domains.send_jobs.service import SendJobService, SendJobWorker
 from app.domains.settings.service import WorkspaceSettingsService
@@ -43,8 +43,11 @@ class RuntimeCORSMiddleware:
             await self.app(scope, receive, send)
             return
         middleware = CORSMiddleware(
-            self.app, allow_origins=self.application.state.settings.cors_origin_list,
-            allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
+            self.app,
+            allow_origins=self.application.state.settings.cors_origin_list,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
         )
         await middleware(scope, receive, send)
 
@@ -54,16 +57,12 @@ def create_app(
     bridge: WhatsAppBridge | None = None,
     *,
     start_worker: bool = True,
-    start_scheduler: bool | None = None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         runtime_settings = settings if settings is not None else Settings()
         database = Database(runtime_settings.database_path)
         database.initialize()
-        should_start_scheduler = (
-            start_worker if start_scheduler is None else start_scheduler
-        )
         workspace_settings = WorkspaceSettingsService(
             database,
             {
@@ -92,10 +91,14 @@ def create_app(
             else None,
         )
         repository = SendJobRepository(database)
-        runtime_bridge = bridge if bridge is not None else HttpWhatsAppBridge(
-            runtime_settings.whatsapp_bridge_url,
-            runtime_settings.bridge_timeout_seconds,
-            runtime_settings.whatsapp_bridge_api_key,
+        runtime_bridge = (
+            bridge
+            if bridge is not None
+            else HttpWhatsAppBridge(
+                runtime_settings.whatsapp_bridge_url,
+                runtime_settings.bridge_timeout_seconds,
+                runtime_settings.whatsapp_bridge_api_key,
+            )
         )
         readiness = BridgeReadiness(
             runtime_bridge,
@@ -105,12 +108,6 @@ def create_app(
         )
         send_job_service = SendJobService(repository, document_service, runtime_bridge, readiness)
         worker = SendJobWorker(send_job_service, runtime_settings.worker_poll_seconds)
-        pouncha_repository = PounchaSyncRepository(database)
-        pouncha_repository.mark_stale_runs_failed()
-        pouncha_service = create_pouncha_sync_service(
-            runtime_settings, pouncha_repository
-        )
-        pouncha_scheduler = PounchaSyncScheduler(pouncha_service)
         application.state.settings = runtime_settings
         application.state.database = database
         application.state.workspace_settings = workspace_settings
@@ -121,39 +118,39 @@ def create_app(
         application.state.bridge_readiness = readiness
         application.state.send_job_service = send_job_service
         application.state.worker = worker
-        application.state.pouncha_sync_service = pouncha_service
-        application.state.pouncha_scheduler = pouncha_scheduler
+        pouncha_repository = RunRepository(database)
+        pouncha_repository.recover()
+        application.state.pouncha_service = PounchaService(
+            runtime_settings,
+            pouncha_repository,
+            exporter=BusyExporter(runtime_settings),
+        )
         try:
             if start_worker:
                 await worker.start()
             else:
                 repository.recover_incomplete()
-            if should_start_scheduler:
-                await pouncha_scheduler.start()
             yield
         finally:
             try:
-                await pouncha_scheduler.stop()
+                if start_worker:
+                    await worker.stop()
             finally:
-                try:
-                    if start_worker:
-                        await worker.stop()
-                finally:
-                    close = getattr(runtime_bridge, "close", None)
-                    if close is not None:
-                        result = close()
-                        if inspect.isawaitable(result):
-                            await result
+                close = getattr(runtime_bridge, "close", None)
+                if close is not None:
+                    result = close()
+                    if inspect.isawaitable(result):
+                        await result
 
     application = FastAPI(title="Office Document Dashboard API", lifespan=lifespan)
     application.add_middleware(RuntimeCORSMiddleware, application=application)
     application.include_router(health.router, prefix="/api")
     application.include_router(documents.router, prefix="/api")
     application.include_router(busy_ledger_routes.router, prefix="/api")
-    application.include_router(pouncha_sync_routes.router, prefix="/api")
     application.include_router(send_jobs.router, prefix="/api")
     application.include_router(settings_routes.router, prefix="/api")
     application.include_router(whatsapp.router, prefix="/api")
+    application.include_router(pouncha_routes.router, prefix="/api")
     return application
 
 

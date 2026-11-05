@@ -1,1 +1,1 @@
-"""Daily Pouncha sales sync from BUSY 21 to Google Sheets."""
+"""Manually requested Pouncha synchronization. No scheduler or periodic worker."""
