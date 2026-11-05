@@ -1,3 +1,16 @@
+# Local configuration and private signing material
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.key
+*.pem
+*.mobileprovision
+
 # Python
 __pycache__/
 *.py[cod]
@@ -9,6 +22,15 @@ backend/env/
 backend/.pytest_cache/
 backend/.mypy_cache/
 backend/.ruff_cache/
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.db-wal
+*.db-shm
 data/
 tmp/
 mobile/node_modules/
@@ -17,15 +39,24 @@ mobile/dist/
 mobile/android/
 mobile/ios/
 mobile/.env.local
-*.keystore
-*.jks
 *.apk
+*.aab
+*.apks
+*.idsig
+mobile/build/
+mobile/web-build/
+output/android/
 .g/
+.gradle/
+local.properties
+*.hprof
 
 # Node / Next.js
+node_modules/
 frontend/node_modules/
 frontend/.next/
 frontend/.env.local
+frontend/out/
 whatsapp-bridge/node_modules/
 whatsapp-bridge/runtime/
 whatsapp-bridge/tokens/
@@ -36,6 +67,9 @@ whatsapp-bridge/.env
 # Local tooling
 .pytest_cache/
 frontend/tsconfig.tsbuildinfo
+*.tsbuildinfo
+.eslintcache
+coverage/
 .DS_Store
 Thumbs.db
 *.log
