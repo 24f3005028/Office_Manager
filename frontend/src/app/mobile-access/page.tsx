@@ -35,6 +35,7 @@ export default function MobileAccess() {
   const [status, setStatus] = useState<Status | null>(null),
     [name, setName] = useState(""),
     [phone, setPhone] = useState(""),
+    [countryCode, setCountryCode] = useState("91"),
     [invite, setInvite] = useState<{
       invite_code: string;
       expires_at: string;
@@ -85,14 +86,25 @@ export default function MobileAccess() {
           <h2>Connect a phone</h2>
           <p className="muted-text">
             Use a separate invite for each person. Enter their WhatsApp number
-            with country code, without + or spaces. Reports can only be sent to
-            this approved number.
+            using the separate country code and mobile number fields. Reports
+            can only be sent to this approved number.
           </p>
           <form
             onSubmit={(event) => {
               event.preventDefault();
               void action(async () => {
-                setInvite(await call("/invites", { name: name.trim(), phone }));
+                if (countryCode === "91" && !/^[6-9][0-9]{9}$/.test(phone))
+                  throw new Error(
+                    "Enter a 10-digit Indian mobile number without +91 or a leading 0.",
+                  );
+                if (countryCode.length + phone.length > 15)
+                  throw new Error("Check the country code and mobile number.");
+                setInvite(
+                  await call("/invites", {
+                    name: name.trim(),
+                    phone: countryCode + phone,
+                  }),
+                );
                 setName("");
                 setPhone("");
               });
@@ -107,18 +119,53 @@ export default function MobileAccess() {
               onChange={(event) => setName(event.target.value)}
               required
             />
-            <label htmlFor="mobile-phone">WhatsApp number</label>
-            <input
-              id="mobile-phone"
-              value={phone}
-              onChange={(event) =>
-                setPhone(event.target.value.replace(/[^0-9]/g, ""))
-              }
-              placeholder="919876543210"
-              pattern="[1-9][0-9]{7,14}"
-              inputMode="tel"
-              required
-            />
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "110px minmax(0,1fr)",
+                gap: 12,
+              }}
+            >
+              <div style={{ display: "grid", gap: 9 }}>
+                <label htmlFor="mobile-country">Country code</label>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>+</span>
+                  <input
+                    id="mobile-country"
+                    value={countryCode}
+                    onChange={(event) =>
+                      setCountryCode(
+                        event.target.value.replace(/\D/g, "").slice(0, 4),
+                      )
+                    }
+                    pattern="[1-9][0-9]{0,3}"
+                    inputMode="tel"
+                    maxLength={4}
+                    required
+                    style={{ minWidth: 0, width: "100%" }}
+                  />
+                </div>
+              </div>
+              <div style={{ display: "grid", gap: 9 }}>
+                <label htmlFor="mobile-phone">Mobile number</label>
+                <input
+                  id="mobile-phone"
+                  value={phone}
+                  onChange={(event) =>
+                    setPhone(event.target.value.replace(/[^0-9]/g, ""))
+                  }
+                  placeholder="9876543210"
+                  pattern="[0-9]{6,14}"
+                  maxLength={14}
+                  inputMode="tel"
+                  required
+                />
+              </div>
+            </div>
+            <small className="muted-text">
+              For India: +91 and the 10-digit WhatsApp number. Do not repeat the
+              country code.
+            </small>
             <button
               className="button button-primary"
               disabled={busy || !name.trim()}

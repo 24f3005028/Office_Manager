@@ -76,6 +76,14 @@ export async function request<T>(
   } catch (error) {
     if (
       error instanceof Error &&
+      /UnknownHostException|Unable to resolve host/i.test(error.message)
+    ) {
+      throw new Error(
+        "Cannot find the office address. Check that Tailscale is connected. If Android Private DNS is enabled, try setting it to Automatic or Off.",
+      );
+    }
+    if (
+      error instanceof Error &&
       (error.name === "AbortError" ||
         error.message === "Network request failed")
     ) {

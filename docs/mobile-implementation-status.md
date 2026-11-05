@@ -3,6 +3,8 @@
 ## Implemented
 
 - Expo Android app, locally signed release APK at `output/android/HS-Traders-Office.apk`.
+- Version 1.1.0 (Android versionCode 2): redesigned mobile screens, bottom navigation, supplied H.S. Traders launcher icon, separate country-code/mobile-number setup and party-named statement PDFs.
+- Failed report exports are removed immediately. Completed PDFs are removed after 48 hours at startup and on ordinary report requests/history access, without a scheduler. Pouncha temporary Excel cleanup is regression-tested on success, export/parse failure and uncertain append outcomes.
 - One-time 15-minute invites, OS secure token storage, 30-day sessions, individual revocation and all-party access for approved users.
 - Loopback-only office administration under Settings → Manage mobile access. The separate mobile gateway does not mount office settings, filesystem pickers or WhatsApp administration.
 - Imported 898 trade-account names from the supplied BUSY account-list workbook. Tax IDs, addresses, balances and other columns are not stored by the mobile catalogue.
@@ -14,7 +16,7 @@
 
 ## Verification
 
-- Complete backend suite: 185 passed, including the installer endpoint and 15 mobile tests.
+- Complete backend suite: 201 passed, including report navigation, Excel/PDF format switching, pairing phone checks, party-named attachments and cleanup regression coverage.
 - Strict mypy and Ruff passed; frontend TypeScript, ESLint and production build passed.
 - Android TypeScript and Metro/Hermes bundle passed; native ARM64/ARMv7 release build succeeded. Final APK signing and package metadata checked with Android SDK tools. The office HTTPS address is prefilled; signing credentials and the keystore are absent from the APK.
 - Mobile dependency audit clear after overriding the two moderate build-tool dependency advisories.
@@ -25,6 +27,6 @@
 
 ## Still required
 
-Fresh BUSY PDF export needs a successful live calibration run. The initial favourite-based navigation failed safely before setting any report fields. It was replaced with the existing verified Account Ledger navigation and its Ctrl+R Receivable shortcut. Automatic approval review blocked the retest after the desktop tool reported a physical Escape stop, so the replacement must not be described as verified. The office warning's timeout was exercised locally; cancellation and report ordering are covered by tests with fake exporters.
+Native outstanding export passed a live check on 5 November 2026: homepage recovery → Alt+F → O → Enter → One Account → report options → Alt+E → PDF. RAJAN TEXTILES returned a verified one-page statement for 16 January 2025–5 November 2026. Switching back from Excel to PDF also passed. Pouncha then selected Microsoft Excel from the custom format dropdown, parsed ten bills for 4–5 November 2026 and removed its workbook; no Google Sheet writes were made by this test. The direct export's columns and Total footer are supported alongside earlier print-layout reports. No Account Ledger, Ctrl+R or Print Preview steps are used for statements. The office warning remains mandatory; cancellation and report ordering are covered by tests. Ruff and strict mypy passed.
 
-A real Android phone installation, cellular-network request and actual own-number WhatsApp delivery remain hands-on acceptance checks. Create an invite from the office page first. Keep the app-signing keystore and its credentials in the ignored `data/android-build` directory backed up privately for future updates.
+The user has installed and connected the Android app after disabling conflicting Android Private DNS. A fresh request from the updated gateway and actual own-number WhatsApp delivery remain hands-on acceptance checks. The existing Send to my WhatsApp action sends the verified exported PDF to the signed-in user's approved phone through the bridge. Keep the app-signing keystore and its credentials in the ignored `data/android-build` directory backed up privately for future updates.

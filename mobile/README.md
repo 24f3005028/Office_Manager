@@ -9,6 +9,9 @@ Expo / React Native / TypeScript. The app connects only to an HTTPS mobile gatew
 - Saved invoice lookup by financial year and exact short/full bill number, including multiple series.
 - PDF opening through Android's print preview, saving to a chosen folder, native sharing and sending to the user's owner-approved WhatsApp number.
 - Report history, office cancellation and honest unavailable/expired-file states.
+- Version 1.1: navy/blue mobile redesign, bottom navigation and the H.S. Traders logo as the Android launcher icon.
+- Separate country code (default +91) and mobile number during pairing, checked against the invite's approved number. The office invite form uses the same split.
+- Outstanding PDFs use the party name for opening, downloads, sharing and WhatsApp attachments.
 
 ## Office setup
 
@@ -22,7 +25,7 @@ The phone can download the APK from the private office address followed by `/ins
 
 The office PC must stay unlocked and BUSY logged into H.S. TRADERS for fresh reports. Each such request shows a five-second native warning; cancel/close/Escape/Enter prevents the request from touching BUSY. Ignoring it permits the request after five seconds. A shared cross-process lock excludes Pouncha automation. Archived invoice reads never operate BUSY. A user may have one active report request at a time.
 
-Generated reports are available for 48 hours. Invoice search indexes existing authorised bill folders and configured `MOBILE_ARCHIVE_ROOTS`; unreadable/unidentified PDFs are omitted, conflicting versions are blocked. No BUSY database files are read. Statements live outside invoice-scanning folders.
+Generated reports are available for 48 hours, then deleted at startup or on normal report requests/history access. Failed output is deleted immediately. No cleanup scheduler is installed. Pouncha Excel exports are temporary and removed after parsing, including failed runs. Original uploads and saved invoice archives are preserved. Invoice search indexes existing authorised bill folders and configured `MOBILE_ARCHIVE_ROOTS`; unreadable/unidentified PDFs are omitted, conflicting versions are blocked. No BUSY database files are read. Statements live outside invoice-scanning folders.
 
 ## Build locally on Windows
 

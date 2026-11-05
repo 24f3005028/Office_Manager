@@ -8,7 +8,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
+  StatusBar,
   Text,
   TextInput,
   View,
@@ -28,6 +28,17 @@ import {
   Session,
   todayIndia,
 } from "./src/api";
+import {
+  Button,
+  displayDate,
+  Heading,
+  Icon,
+  initials,
+  Logo,
+  Note,
+  palette,
+  styles,
+} from "./src/ui";
 
 const SESSION_KEY = "office-session-v1";
 const statusText: Record<string, string> = {
@@ -38,53 +49,25 @@ const statusText: Record<string, string> = {
   cancelled: "Someone is using BUSY",
   failed: "Report could not be created",
 };
-type Screen = "home" | "outstanding" | "invoices" | "history";
+type Screen = "home" | "outstanding" | "invoices" | "history" | "account";
 const errorText = (error: unknown) =>
   error instanceof Error
     ? error.message
     : "Something went wrong. Please try again.";
-function Button({
-  title,
-  onPress,
-  disabled = false,
-  secondary = false,
-}: {
-  title: string;
-  onPress: () => void;
-  disabled?: boolean;
-  secondary?: boolean;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.button,
-        secondary && styles.secondary,
-        disabled && styles.disabled,
-        pressed && styles.pressed,
-      ]}
-    >
-      <Text style={[styles.buttonText, secondary && styles.secondaryText]}>
-        {title}
-      </Text>
-    </Pressable>
-  );
-}
-
 function OfficeApp() {
   const [session, setSession] = useState<Session | null>(null),
     [restoring, setRestoring] = useState(true);
   const [url, setUrl] = useState(process.env.EXPO_PUBLIC_OFFICE_URL ?? ""),
     [code, setCode] = useState(""),
+    [countryCode, setCountryCode] = useState("91"),
+    [mobileNumber, setMobileNumber] = useState(""),
     [person, setPerson] = useState<Person | null>(null);
   const [screen, setScreen] = useState<Screen>("home"),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const [query, setQuery] = useState(""),
     [parties, setParties] = useState<Party[]>([]),
+    [searching, setSearching] = useState(false),
     [party, setParty] = useState<Party | null>(null);
   const [asOf, setAsOf] = useState(todayIndia()),
     [advanced, setAdvanced] = useState(false),
@@ -136,12 +119,18 @@ function OfficeApp() {
   useEffect(() => {
     if (!session || screen !== "outstanding") return;
     const revision = ++searchRevision.current;
+    setSearching(true);
     const timer = setTimeout(() => {
       void api<Party[]>(`/parties?q=${encodeURIComponent(query)}`)
         .then((rows) => {
           if (revision === searchRevision.current) setParties(rows);
         })
-        .catch((reason) => setError(errorText(reason)));
+        .catch((reason) => {
+          if (revision === searchRevision.current) setError(errorText(reason));
+        })
+        .finally(() => {
+          if (revision === searchRevision.current) setSearching(false);
+        });
     }, 300);
     return () => {
       clearTimeout(timer);
@@ -186,11 +175,21 @@ function OfficeApp() {
   async function pairPhone() {
     await action(async () => {
       const base = officeUrl(url);
+      if (
+        !/^[1-9][0-9]{0,3}$/.test(countryCode) ||
+        !/^[0-9]{6,14}$/.test(mobileNumber) ||
+        (countryCode === "91" && !/^[6-9][0-9]{9}$/.test(mobileNumber)) ||
+        countryCode.length + mobileNumber.length > 15
+      ) {
+        throw new Error(
+          "Check the country code and mobile number. For India, choose +91 and enter the 10-digit number without a leading 0.",
+        );
+      }
       const paired = await request<{ token: string; expires_at: string }>(
         base,
         "/pair",
         undefined,
-        { invite_code: code.trim() },
+        { invite_code: code.trim(), phone: countryCode + mobileNumber },
       );
       const next = { url: base, ...paired };
       await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(next));
@@ -248,12 +247,15 @@ function OfficeApp() {
     kind: "reports" | "invoices",
     id: string,
     mode: "open" | "save" | "share",
+    filename: string,
   ) {
     await action(async () => {
       if (!session) return;
       const directory = FileSystem.cacheDirectory;
       if (!directory) throw new Error("Phone storage is unavailable.");
-      const target = directory + `office-${id}.pdf`;
+      const folder = directory + `office-${id}/`;
+      await FileSystem.makeDirectoryAsync(folder, { intermediates: true });
+      const target = folder + filename;
       const downloaded = await FileSystem.downloadAsync(
         `${session.url}/mobile/v1/${kind}/${id}/pdf`,
         target,
@@ -272,7 +274,7 @@ function OfficeApp() {
         const destination =
           await FileSystem.StorageAccessFramework.createFileAsync(
             permission.directoryUri,
-            `Office-${id}.pdf`,
+            filename,
             "application/pdf",
           );
         const content = await FileSystem.readAsStringAsync(target, {
@@ -324,225 +326,821 @@ function OfficeApp() {
       ],
     );
   }
-  function pdfActions(kind: "reports" | "invoices", id: string) {
+  function pdfActions(kind: "reports" | "invoices", id: string, label: string) {
+    const filename =
+      (label
+        .replace(/[<>:"/\\|?*\x00-\x1f]/g, "-")
+        .replace(/^[ .]+|[ .]+$/g, "")
+        .slice(0, 140) || "Statement") + ".pdf";
     return (
       <View style={styles.actions}>
         <Button
           title="Open PDF"
+          icon="file"
           disabled={busy}
-          onPress={() => void getPdf(kind, id, "open")}
-        />
-        <Button
-          title="Download PDF"
-          disabled={busy}
-          secondary
-          onPress={() => void getPdf(kind, id, "save")}
+          onPress={() => void getPdf(kind, id, "open", filename)}
         />
         <Button
           title="Send to my WhatsApp"
+          icon="whatsapp"
+          green
           disabled={busy || !person}
-          secondary
           onPress={() => sendToMe(kind, id)}
         />
-        <Button
-          title="Share PDF…"
-          disabled={busy}
-          secondary
-          onPress={() => void getPdf(kind, id, "share")}
-        />
+        <View style={styles.smallActions}>
+          {(
+            [
+              ["save", "download", "Download"],
+              ["share", "share", "Share"],
+            ] as const
+          ).map(([mode, icon, title]) => (
+            <Pressable
+              key={mode}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: busy }}
+              disabled={busy}
+              onPress={() => void getPdf(kind, id, mode, filename)}
+              style={({ pressed }) => [
+                styles.smallAction,
+                busy && styles.disabled,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Icon name={icon} size={18} />
+              <Text style={styles.smallActionText}>{title}</Text>
+            </Pressable>
+          ))}
+        </View>
       </View>
     );
   }
   function reportCard(row: Report) {
+    const pending = ["queued", "warning", "generating"].includes(row.status);
     return (
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>{row.party_name}</Text>
-        <Text style={styles.muted}>Status as of {row.as_of}</Text>
-        <Text style={styles.status}>
-          {statusText[row.status] ?? row.status}
-        </Text>
-        {["queued", "warning", "generating"].includes(row.status) && (
-          <>
-            <ActivityIndicator color="#2256c4" />
-            <Text style={styles.muted}>
-              The office can cancel if someone is working in BUSY.
+        <View style={styles.row}>
+          <View style={styles.tileIcon}>
+            <Icon name="statement" />
+          </View>
+          <View style={styles.grow}>
+            <Text style={styles.eyebrow}>PARTY STATEMENT</Text>
+          </View>
+          {row.status === "ready" && (
+            <View style={styles.statusBadge}>
+              <Icon name="check" color={palette.teal} size={13} />
+              <Text style={styles.successText}>Ready</Text>
+            </View>
+          )}
+        </View>
+        <View style={{ gap: 6 }}>
+          <Text style={styles.cardTitle}>{row.party_name}</Text>
+          <Text style={styles.muted}>As of {displayDate(row.as_of)}</Text>
+        </View>
+        {pending && (
+          <View style={styles.progress}>
+            <ActivityIndicator size="large" color={palette.blue} />
+            <Text style={styles.status}>{statusText[row.status]}</Text>
+            <Text style={styles.emptyCopy}>
+              The office is preparing your PDF. You can leave this screen and
+              check Activity.
             </Text>
-          </>
+          </View>
+        )}
+        {!pending && row.status !== "ready" && (
+          <Text style={styles.status}>
+            {statusText[row.status] ?? row.status}
+          </Text>
         )}
         {row.error && <Text style={styles.error}>{row.error}</Text>}
         {row.status === "ready" && (
           <>
-            <Text style={styles.amount}>
-              ₹
-              {Number(row.details?.pending_amount ?? 0).toLocaleString(
-                "en-IN",
-                { minimumFractionDigits: 2 },
-              )}
-            </Text>
-            <Text style={styles.muted}>
-              Generated{" "}
+            <View style={styles.amountBox}>
+              <Text style={styles.amountLabel}>TOTAL OUTSTANDING</Text>
+              <Text
+                style={styles.amount}
+                adjustsFontSizeToFit
+                numberOfLines={1}
+              >
+                ₹
+                {Number(row.details?.pending_amount ?? 0).toLocaleString(
+                  "en-IN",
+                  { minimumFractionDigits: 2, maximumFractionDigits: 2 },
+                )}
+              </Text>
+            </View>
+            {pdfActions("reports", row.id, row.party_name)}
+            <Text style={styles.noteText}>
+              Created{" "}
               {row.finished_at
-                ? new Date(row.finished_at).toLocaleString()
-                : ""}
-              . Saved reports expire after 48 hours.
+                ? new Date(row.finished_at).toLocaleString("en-IN")
+                : "just now"}
+              . Available for 48 hours.
             </Text>
-            {pdfActions("reports", row.id)}
           </>
         )}
       </View>
     );
   }
+  function historyRow(row: Report) {
+    return (
+      <Pressable
+        key={row.id}
+        accessibilityRole="button"
+        accessibilityLabel={`View statement for ${row.party_name}`}
+        disabled={busy}
+        onPress={() => {
+          setReport(row);
+          setParty(null);
+          setScreen("outstanding");
+        }}
+        style={({ pressed }) => [styles.historyItem, pressed && styles.pressed]}
+      >
+        <View style={styles.partyMark}>
+          <Icon name={row.status === "ready" ? "file" : "history"} size={20} />
+        </View>
+        <View style={styles.grow}>
+          <Text style={styles.historyTitle}>{row.party_name}</Text>
+          <Text style={styles.historyMeta}>
+            {displayDate(row.as_of)} ·{" "}
+            {row.status === "ready"
+              ? "PDF ready"
+              : (statusText[row.status] ?? row.status)}
+          </Text>
+        </View>
+        <Icon name="chevron" color={palette.muted} size={17} />
+      </Pressable>
+    );
+  }
+  function resetStatement() {
+    setReport(null);
+    setParty(null);
+    setQuery("");
+  }
   if (restoring)
     return (
       <View style={styles.loading}>
-        <ActivityIndicator color="#2256c4" />
+        <Logo large />
+        <ActivityIndicator color={palette.blue} />
       </View>
     );
   return (
     <SafeAreaView style={styles.root}>
+      <StatusBar barStyle="dark-content" />
       <KeyboardAvoidingView
-        style={styles.root}
+        style={styles.screen}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={styles.header}>
-          <Text style={styles.brand}>H.S. TRADERS</Text>
-          <Text style={styles.muted}>
-            {person ? `Hello, ${person.name}` : "Office on your phone"}
-          </Text>
+          <Logo />
+          <View style={styles.headerText}>
+            <Text style={styles.brand}>H.S. TRADERS</Text>
+            <Text style={styles.brandSub}>Your office, wherever you are</Text>
+          </View>
+          {session && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                screen === "account"
+                  ? "Back to home"
+                  : "Your account and connection"
+              }
+              disabled={busy}
+              onPress={() =>
+                setScreen(screen === "account" ? "home" : "account")
+              }
+              style={styles.avatar}
+            >
+              {screen === "account" ? (
+                <Icon name="close" size={19} />
+              ) : (
+                <Text style={styles.avatarText}>
+                  {initials(person?.name ?? "HS")}
+                </Text>
+              )}
+            </Pressable>
+          )}
         </View>
         {error !== "" && (
           <View accessibilityRole="alert" style={styles.notice}>
-            <Text style={styles.error}>{error}</Text>
-            <Pressable onPress={() => setError("")}>
-              <Text style={styles.link}>Dismiss</Text>
+            <Icon name="info" color="#a23932" size={20} />
+            <Text style={[styles.error, styles.grow]}>{error}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss error"
+              onPress={() => setError("")}
+              style={styles.dismiss}
+            >
+              <Icon name="close" size={17} color="#a23932" />
             </Pressable>
           </View>
         )}
-        {busy && <ActivityIndicator color="#2256c4" style={{ margin: 8 }} />}
+        {busy && (
+          <ActivityIndicator
+            color={palette.blue}
+            style={{ marginTop: 10 }}
+            accessibilityLabel="Working"
+          />
+        )}
         {!session ? (
           <ScrollView
             contentContainerStyle={styles.content}
             keyboardShouldPersistTaps="handled"
           >
-            <Text style={styles.title}>Connect this phone</Text>
-            <Text style={styles.muted}>
-              Turn on Tailscale, then enter the office address and your personal
-              invite code.
-            </Text>
-            <Text style={styles.label}>Office HTTPS address</Text>
-            <TextInput
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-              placeholder="https://office-computer.example.ts.net"
-              value={url}
-              onChangeText={setUrl}
-              style={styles.input}
-              accessibilityLabel="Office HTTPS address"
-            />
-            <Text style={styles.label}>Invite code</Text>
-            <TextInput
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-              value={code}
-              onChangeText={setCode}
-              style={styles.input}
-              accessibilityLabel="Invite code"
-            />
-            <Button
-              title="Connect phone"
-              disabled={busy || !url.trim() || !code.trim()}
-              onPress={() => void pairPhone()}
-            />
-            <Text style={styles.muted}>
-              Ask the owner to create an invite under Mobile access on the
-              office dashboard. Each code works once and expires in 15 minutes.
-            </Text>
+            <View style={styles.welcome}>
+              <Logo large />
+              <Text style={styles.welcomeTitle}>
+                {"The office.\nIn your pocket."}
+              </Text>
+              <Text style={styles.welcomeCopy}>
+                Party statements and bill PDFs, ready whenever you need them.
+              </Text>
+            </View>
+            <View style={styles.card}>
+              <View style={styles.sectionHead}>
+                <Text style={styles.sectionTitle}>Connect your phone</Text>
+                <Icon name="shield" size={20} color={palette.teal} />
+              </View>
+              <Text style={styles.muted}>
+                Turn on Tailscale and enter the invite from your office
+                dashboard.
+              </Text>
+              <View>
+                <Text style={styles.label}>Office address</Text>
+                <TextInput
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                  placeholder="https://your-office.ts.net"
+                  value={url}
+                  onChangeText={setUrl}
+                  style={styles.input}
+                  accessibilityLabel="Office HTTPS address"
+                />
+              </View>
+              <View>
+                <Text style={styles.label}>Your WhatsApp number</Text>
+                <View style={styles.row}>
+                  <View style={{ width: 105 }}>
+                    <Text style={styles.noteText}>Country code</Text>
+                    <View
+                      style={[styles.searchBox, { paddingLeft: 12, gap: 2 }]}
+                    >
+                      <Text style={styles.muted}>+</Text>
+                      <TextInput
+                        value={countryCode}
+                        onChangeText={(value) =>
+                          setCountryCode(value.replace(/\D/g, "").slice(0, 4))
+                        }
+                        keyboardType="phone-pad"
+                        maxLength={4}
+                        style={styles.searchInput}
+                        accessibilityLabel="Country calling code"
+                        placeholder="91"
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.grow}>
+                    <Text style={styles.noteText}>Mobile number</Text>
+                    <TextInput
+                      value={mobileNumber}
+                      onChangeText={(value) =>
+                        setMobileNumber(value.replace(/\D/g, "").slice(0, 14))
+                      }
+                      keyboardType="phone-pad"
+                      maxLength={14}
+                      style={styles.input}
+                      accessibilityLabel="Mobile number without country code"
+                      placeholder="9876543210"
+                    />
+                  </View>
+                </View>
+                <Text style={[styles.noteText, { marginTop: 8 }]}>
+                  Use the same WhatsApp number the office entered on your
+                  invite.
+                </Text>
+              </View>
+              <View>
+                <Text style={styles.label}>Your invite code</Text>
+                <TextInput
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  secureTextEntry
+                  value={code}
+                  onChangeText={setCode}
+                  placeholder="Paste your invite code"
+                  style={styles.input}
+                  accessibilityLabel="Invite code"
+                />
+              </View>
+              <Button
+                title="Connect to office"
+                icon="arrow"
+                disabled={
+                  busy ||
+                  !url.trim() ||
+                  !code.trim() ||
+                  !countryCode ||
+                  !mobileNumber
+                }
+                onPress={() => void pairPhone()}
+              />
+            </View>
+            <Note>
+              Ask the owner for an invite in Mobile access. Each code works once
+              and is valid for 15 minutes.
+            </Note>
           </ScrollView>
         ) : (
-          <>
-            <View style={styles.tabs}>
-              {(
-                [
-                  ["home", "Home"],
-                  ["outstanding", "Outstanding"],
-                  ["invoices", "Find bill"],
-                  ["history", "History"],
-                ] as const
-              ).map(([key, title]) => (
-                <Pressable
-                  key={key}
-                  accessibilityRole="tab"
-                  accessibilityState={{
-                    selected: screen === key,
-                    disabled: busy,
-                  }}
-                  disabled={busy}
-                  onPress={() => void open(key)}
-                  style={[styles.tab, screen === key && styles.activeTab]}
-                >
-                  <Text
-                    style={[
-                      styles.tabText,
-                      screen === key && styles.activeTabText,
-                    ]}
-                  >
-                    {title}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+          <View style={styles.screen}>
             {screen === "home" ? (
               <ScrollView contentContainerStyle={styles.content}>
-                <Text style={styles.title}>What do you need?</Text>
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Outstanding bills</Text>
-                  <Text style={styles.muted}>
-                    Choose a party and get their latest pending-bill statement.
-                  </Text>
-                  <Button
-                    title="Get outstanding statement"
+                <Heading
+                  eyebrow="YOUR WORKSPACE"
+                  title={`Hello${person ? ", " + person.name.split(" ")[0] : ""}.`}
+                  subtitle="What can we help you find today?"
+                />
+                <View style={styles.hero}>
+                  <View style={styles.heroTop}>
+                    <View style={styles.heroIcon}>
+                      <Icon name="statement" color="white" size={25} />
+                    </View>
+                    <Text style={styles.heroTag}>FROM THE OFFICE</Text>
+                  </View>
+                  <View style={{ gap: 8 }}>
+                    <Text style={styles.heroTitle}>
+                      {"Outstanding\nmade simple."}
+                    </Text>
+                    <Text style={styles.heroCopy}>
+                      Choose a party. Get their latest pending-bill statement.
+                    </Text>
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={busy}
                     onPress={() => void open("outstanding")}
-                  />
+                    style={({ pressed }) => [
+                      styles.heroButton,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={styles.heroButtonText}>Get a statement</Text>
+                    <Icon name="arrow" size={20} />
+                  </Pressable>
                 </View>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={busy}
+                  onPress={() => void open("invoices")}
+                  style={({ pressed }) => [
+                    styles.billTile,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <View style={styles.tileIcon}>
+                    <Icon name="search" size={25} />
+                  </View>
+                  <View style={styles.grow}>
+                    <Text style={styles.tileTitle}>Find a bill</Text>
+                    <Text style={styles.tileCopy}>
+                      Enter a bill number to get its PDF.
+                    </Text>
+                  </View>
+                  <Icon name="chevron" size={18} />
+                </Pressable>
+                <View style={styles.sectionHead}>
+                  <Text style={styles.sectionTitle}>Recent statements</Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={busy}
+                    style={styles.textButton}
+                    onPress={() => void open("history")}
+                  >
+                    <Text style={styles.link}>View all</Text>
+                  </Pressable>
+                </View>
+                {history.length ? (
+                  <View style={{ gap: 10 }}>
+                    {history.slice(0, 2).map(historyRow)}
+                  </View>
+                ) : (
+                  <View style={styles.card}>
+                    <Text style={styles.muted}>
+                      Your statements will appear here after your first request.
+                    </Text>
+                  </View>
+                )}
+                <Note>
+                  Fresh statements use the office computer. The office can pause
+                  a request if someone is working.
+                </Note>
+              </ScrollView>
+            ) : screen === "outstanding" ? (
+              <FlatList
+                data={party || report ? [] : parties}
+                keyExtractor={(row) => row.id}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.content}
+                ListHeaderComponent={
+                  <View style={styles.listHeader}>
+                    <Heading
+                      eyebrow="OUTSTANDING BILLS"
+                      title={report ? "Your statement" : "Choose a party"}
+                      subtitle={
+                        report
+                          ? "Your report, straight from the office."
+                          : "Search by name to get a pending-bill statement."
+                      }
+                    />
+                    {!report && !party && (
+                      <>
+                        <View style={styles.searchBox}>
+                          <Icon name="search" size={20} color={palette.muted} />
+                          <TextInput
+                            style={styles.searchInput}
+                            placeholder="Search party name…"
+                            placeholderTextColor={palette.muted}
+                            value={query}
+                            editable={!busy}
+                            onChangeText={setQuery}
+                            autoCorrect={false}
+                            accessibilityLabel="Search party"
+                          />
+                        </View>
+                        <Text style={styles.eyebrow}>
+                          {query ? "SEARCH RESULTS" : "PARTIES"}
+                        </Text>
+                      </>
+                    )}
+                    {party && !report && (
+                      <View style={styles.card}>
+                        <View style={styles.row}>
+                          <View style={styles.partyMark}>
+                            <Text style={styles.partyInitials}>
+                              {initials(party.name)}
+                            </Text>
+                          </View>
+                          <Text style={[styles.cardTitle, styles.grow]}>
+                            {party.name}
+                          </Text>
+                        </View>
+                        <View style={styles.divider} />
+                        <View style={styles.row}>
+                          <Icon
+                            name="calendar"
+                            color={palette.muted}
+                            size={19}
+                          />
+                          <View style={styles.grow}>
+                            <Text style={styles.label}>Statement as of</Text>
+                            <Text style={styles.muted}>
+                              {displayDate(asOf)}
+                            </Text>
+                          </View>
+                          <Pressable
+                            accessibilityRole="button"
+                            disabled={busy}
+                            style={styles.textButton}
+                            onPress={() => setAdvanced(!advanced)}
+                          >
+                            <Text style={styles.link}>
+                              {advanced ? "Done" : "Change"}
+                            </Text>
+                          </Pressable>
+                        </View>
+                        {advanced && (
+                          <View>
+                            <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
+                            <TextInput
+                              style={styles.input}
+                              value={asOf}
+                              editable={!busy}
+                              onChangeText={setAsOf}
+                              placeholder="2026-11-05"
+                              accessibilityLabel="Statement status date"
+                            />
+                          </View>
+                        )}
+                        <Button
+                          title="Create statement"
+                          icon="arrow"
+                          disabled={busy}
+                          onPress={() => void generate()}
+                        />
+                        <Pressable
+                          accessibilityRole="button"
+                          disabled={busy}
+                          style={styles.textButton}
+                          onPress={() => setParty(null)}
+                        >
+                          <Text style={styles.link}>
+                            Choose a different party
+                          </Text>
+                        </Pressable>
+                      </View>
+                    )}
+                    {report && reportCard(report)}
+                    {report && (
+                      <Button
+                        title="Get another statement"
+                        icon="statement"
+                        secondary
+                        disabled={busy || activeReport}
+                        onPress={resetStatement}
+                      />
+                    )}
+                    {(party || report) && (
+                      <Note>
+                        Includes pending bills from 16 January 2025. Fresh
+                        reports require the office PC to be online with BUSY
+                        open.
+                      </Note>
+                    )}
+                  </View>
+                }
+                renderItem={({ item }) => (
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={busy}
+                    onPress={() => {
+                      setParty(item);
+                      setReport(null);
+                    }}
+                    style={({ pressed }) => [
+                      styles.party,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <View style={styles.partyMark}>
+                      <Text style={styles.partyInitials}>
+                        {initials(item.name)}
+                      </Text>
+                    </View>
+                    <Text style={styles.partyName}>{item.name}</Text>
+                    <Icon name="chevron" size={17} color={palette.muted} />
+                  </Pressable>
+                )}
+                ListEmptyComponent={
+                  !party && !report ? (
+                    <View style={styles.empty}>
+                      {searching ? (
+                        <>
+                          <ActivityIndicator color={palette.blue} />
+                          <Text style={styles.emptyCopy}>Finding parties…</Text>
+                        </>
+                      ) : (
+                        <>
+                          <Icon name="search" color={palette.muted} size={32} />
+                          <Text style={styles.emptyTitle}>
+                            No parties to show
+                          </Text>
+                          <Text style={styles.emptyCopy}>
+                            Try another spelling, or ask the office to update
+                            the party list.
+                          </Text>
+                        </>
+                      )}
+                    </View>
+                  ) : undefined
+                }
+              />
+            ) : screen === "invoices" ? (
+              <ScrollView
+                contentContainerStyle={styles.content}
+                keyboardShouldPersistTaps="handled"
+              >
+                <Heading
+                  eyebrow="BILL PDFS"
+                  title="Find a bill"
+                  subtitle="Select the year, then enter your bill number."
+                />
                 <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Find a bill</Text>
-                  <Text style={styles.muted}>
-                    Choose a financial year and enter the bill number.
-                  </Text>
+                  <View>
+                    <Text style={styles.label}>Financial year</Text>
+                    <View style={styles.yearList}>
+                      {years.map((value) => (
+                        <Pressable
+                          accessibilityRole="radio"
+                          accessibilityState={{
+                            selected: year === value,
+                            disabled: busy,
+                          }}
+                          disabled={busy}
+                          key={value}
+                          onPress={() => {
+                            setYear(value);
+                            setInvoices(null);
+                          }}
+                          style={[
+                            styles.year,
+                            year === value && styles.yearActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.yearText,
+                              year === value && styles.yearTextActive,
+                            ]}
+                          >
+                            {value}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+                  {!years.length && (
+                    <Text style={styles.muted}>
+                      No saved bill PDFs are available yet.
+                    </Text>
+                  )}
+                  <View>
+                    <Text style={styles.label}>Bill number</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={bill}
+                      editable={!busy}
+                      autoCapitalize="characters"
+                      autoCorrect={false}
+                      onChangeText={(value) => {
+                        setBill(value);
+                        setInvoices(null);
+                      }}
+                      placeholder="e.g. 74"
+                      accessibilityLabel="Bill number"
+                      returnKeyType="search"
+                      onSubmitEditing={() => {
+                        if (!busy && bill.trim()) void findBill();
+                      }}
+                    />
+                    <Text style={[styles.noteText, { marginTop: 9 }]}>
+                      You can also enter a full number: HST/L/26-27/74
+                    </Text>
+                  </View>
                   <Button
                     title="Find bill PDF"
-                    onPress={() => void open("invoices")}
+                    icon="search"
+                    disabled={busy || !bill.trim() || !years.length}
+                    onPress={() => void findBill()}
                   />
                 </View>
-                <Text style={styles.muted}>
-                  Fresh statements require the office computer to be online,
-                  unlocked and logged into BUSY. Saved bill lookup does not
-                  operate BUSY.
-                </Text>
-                <Button
-                  title="Check connection"
-                  secondary
-                  disabled={busy}
-                  onPress={() =>
-                    void action(async () => {
-                      setPerson(await api<Person>("/me"));
-                      Alert.alert("Connected", "The office is reachable.");
-                    })
-                  }
+                {invoices === null && (
+                  <Note icon="file">
+                    Finds saved invoices from the office archive. This does not
+                    operate BUSY.
+                  </Note>
+                )}
+                {invoices?.length === 0 && (
+                  <View style={styles.empty}>
+                    <Icon name="search" color={palette.muted} size={34} />
+                    <Text style={styles.emptyTitle}>Bill not found</Text>
+                    <Text style={styles.emptyCopy}>
+                      Check the year and bill number, or ask the office to save
+                      a copy.
+                    </Text>
+                  </View>
+                )}
+                {Boolean(invoices?.length) && (
+                  <Text style={styles.eyebrow}>
+                    {invoices!.length === 1
+                      ? "YOUR BILL"
+                      : "MATCHING BILLS · CHOOSE THE SERIES"}
+                  </Text>
+                )}
+                {invoices?.map((row) => (
+                  <View key={row.file_id} style={styles.card}>
+                    <View style={styles.row}>
+                      <View style={styles.tileIcon}>
+                        <Icon name="file" />
+                      </View>
+                      <View style={styles.grow}>
+                        <Text style={styles.cardTitle}>{row.bill_number}</Text>
+                        <Text style={styles.muted}>
+                          {displayDate(row.date)}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.sectionTitle}>{row.party_name}</Text>
+                    {row.conflicting_copies ? (
+                      <Text style={styles.error}>
+                        Different PDFs exist for this bill. Ask the office to
+                        resolve them before downloading or sending.
+                      </Text>
+                    ) : (
+                      pdfActions("invoices", row.file_id, row.bill_number)
+                    )}
+                  </View>
+                ))}
+              </ScrollView>
+            ) : screen === "history" ? (
+              <ScrollView contentContainerStyle={styles.content}>
+                <Heading
+                  eyebrow="ACTIVITY"
+                  title="Your statements"
+                  subtitle="Open a report to view, download or send its PDF."
                 />
-                <Button
-                  title="Disconnect this phone"
-                  secondary
+                <View style={styles.sectionHead}>
+                  <Text style={styles.sectionTitle}>
+                    {history.length}{" "}
+                    {history.length === 1 ? "statement" : "statements"}
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={busy}
+                    style={styles.textButton}
+                    onPress={() => void open("history")}
+                  >
+                    <Text style={styles.link}>Refresh</Text>
+                  </Pressable>
+                </View>
+                {history.map(historyRow)}
+                {!history.length && (
+                  <View style={styles.empty}>
+                    <Icon name="history" size={38} color={palette.muted} />
+                    <Text style={styles.emptyTitle}>A fresh start</Text>
+                    <Text style={styles.emptyCopy}>
+                      Statements you request will appear here.
+                    </Text>
+                    <Button
+                      title="Get your first statement"
+                      onPress={() => void open("outstanding")}
+                    />
+                  </View>
+                )}
+                <Note icon="info">
+                  PDFs are available for 48 hours. Request a new statement
+                  whenever you need updated figures.
+                </Note>
+              </ScrollView>
+            ) : (
+              <ScrollView contentContainerStyle={styles.content}>
+                <Heading
+                  eyebrow="YOUR ACCOUNT"
+                  title="Office access"
+                  subtitle="Your phone’s connection to H.S. Traders."
+                />
+                <View style={styles.card}>
+                  <View style={styles.row}>
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>
+                        {initials(person?.name ?? "HS")}
+                      </Text>
+                    </View>
+                    <View style={styles.grow}>
+                      <Text style={styles.cardTitle}>
+                        {person?.name ?? "Office user"}
+                      </Text>
+                      <Text style={styles.muted}>
+                        +{person?.phone ?? "Approved phone"}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.divider} />
+                  <Text style={styles.label}>Private office address</Text>
+                  <Text selectable style={styles.muted}>
+                    {session.url}
+                  </Text>
+                  <Button
+                    title="Check office connection"
+                    icon="shield"
+                    secondary
+                    disabled={busy}
+                    onPress={() =>
+                      void action(async () => {
+                        setPerson(await api<Person>("/me"));
+                        Alert.alert(
+                          "Office connected",
+                          "Your private connection is working.",
+                        );
+                      })
+                    }
+                  />
+                </View>
+                <Note>
+                  Keep Tailscale connected on your phone. You can use the app
+                  from anywhere with internet access.
+                </Note>
+                <View style={styles.card}>
+                  <Text style={styles.sectionTitle}>
+                    Need a fresh statement?
+                  </Text>
+                  <Text style={styles.muted}>
+                    The office PC must be powered on, online and unlocked, with
+                    BUSY logged in. Someone at the office can cancel a request
+                    before it starts.
+                  </Text>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={busy}
+                  style={[styles.textButton, { alignSelf: "center" }]}
                   onPress={() =>
                     Alert.alert(
-                      "Disconnect phone?",
+                      "Disconnect this phone?",
                       "You will need a new invite to connect again.",
                       [
                         { text: "Cancel", style: "cancel" },
                         {
                           text: "Disconnect",
+                          style: "destructive",
                           onPress: () =>
                             void action(async () => {
                               try {
@@ -555,205 +1153,67 @@ function OfficeApp() {
                                 setHistory([]);
                                 setParties([]);
                                 setInvoices(null);
+                                setScreen("home");
                               }
                             }),
                         },
                       ],
                     )
                   }
-                />
-              </ScrollView>
-            ) : screen === "outstanding" ? (
-              <FlatList
-                data={party ? [] : parties}
-                keyExtractor={(row) => row.id}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={styles.content}
-                ListHeaderComponent={
-                  <>
-                    <Text style={styles.title}>Outstanding bills</Text>
-                    <Text style={styles.label}>Search party</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Type party name"
-                      value={query}
-                      editable={!activeReport && !busy}
-                      onChangeText={(value) => {
-                        setQuery(value);
-                        setParty(null);
-                        setReport(null);
-                      }}
-                      accessibilityLabel="Search party"
-                    />
-                    {party && (
-                      <View style={styles.card}>
-                        <Text style={styles.cardTitle}>{party.name}</Text>
-                        <Pressable
-                          disabled={activeReport || busy}
-                          onPress={() => {
-                            setParty(null);
-                            setReport(null);
-                          }}
-                        >
-                          <Text style={styles.link}>Choose another party</Text>
-                        </Pressable>
-                        <Button
-                          title={
-                            activeReport
-                              ? "Preparing statement…"
-                              : "Get latest statement"
-                          }
-                          disabled={busy || activeReport}
-                          onPress={() => void generate()}
-                        />
-                        <Pressable onPress={() => setAdvanced(!advanced)}>
-                          <Text style={styles.link}>
-                            {advanced
-                              ? "Hide dates"
-                              : "Choose a historical status date"}
-                          </Text>
-                        </Pressable>
-                        {advanced && (
-                          <>
-                            <Text style={styles.label}>
-                              Status date (YYYY-MM-DD)
-                            </Text>
-                            <TextInput
-                              style={styles.input}
-                              value={asOf}
-                              onChangeText={setAsOf}
-                              placeholder="2026-11-05"
-                              accessibilityLabel="Statement status date"
-                            />
-                          </>
-                        )}
-                        <Text style={styles.muted}>
-                          Includes pending bills from 16 January 2025 through{" "}
-                          {asOf}.
-                        </Text>
-                      </View>
-                    )}
-                    {report && reportCard(report)}
-                  </>
-                }
-                renderItem={({ item }) => (
-                  <Pressable
-                    accessibilityRole="button"
-                    disabled={activeReport || busy}
-                    onPress={() => {
-                      setParty(item);
-                      setReport(null);
-                    }}
-                    style={styles.party}
-                  >
-                    <Text style={styles.partyName}>{item.name}</Text>
-                    <Text style={styles.link}>Choose →</Text>
-                  </Pressable>
-                )}
-                ListEmptyComponent={
-                  !party ? (
-                    <Text style={styles.muted}>
-                      No parties found. Try another spelling or ask the office
-                      to update the account list.
-                    </Text>
-                  ) : undefined
-                }
-              />
-            ) : screen === "invoices" ? (
-              <ScrollView
-                contentContainerStyle={styles.content}
-                keyboardShouldPersistTaps="handled"
-              >
-                <Text style={styles.title}>Find a bill</Text>
-                <Text style={styles.label}>Financial year</Text>
-                <View style={styles.yearList}>
-                  {years.map((value) => (
-                    <Pressable
-                      accessibilityRole="radio"
-                      accessibilityState={{
-                        selected: year === value,
-                        disabled: busy,
-                      }}
-                      disabled={busy}
-                      key={value}
-                      onPress={() => {
-                        setYear(value);
-                        setInvoices(null);
-                      }}
-                      style={[styles.year, year === value && styles.activeTab]}
-                    >
-                      <Text>{value}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-                {!years.length && (
-                  <Text style={styles.muted}>
-                    No indexed bill PDFs are available yet.
-                  </Text>
-                )}
-                <Text style={styles.label}>Bill number</Text>
-                <TextInput
-                  style={styles.input}
-                  value={bill}
-                  editable={!busy}
-                  onChangeText={(value) => {
-                    setBill(value);
-                    setInvoices(null);
-                  }}
-                  autoCapitalize="characters"
-                  placeholder="74 or HST/L/26-27/74"
-                  accessibilityLabel="Bill number"
-                  onSubmitEditing={() => {
-                    if (!busy && bill.trim()) void findBill();
-                  }}
-                />
-                <Button
-                  title="Find bill"
-                  disabled={busy || !bill.trim() || !years.length}
-                  onPress={() => void findBill()}
-                />
-                {invoices?.length === 0 && (
-                  <Text style={styles.muted}>
-                    No saved bill PDF found for this number and year. Check the
-                    year and number, or ask the office for the PDF.
-                  </Text>
-                )}
-                {invoices?.map((row) => (
-                  <View key={row.file_id} style={styles.card}>
-                    <Text style={styles.cardTitle}>{row.bill_number}</Text>
-                    <Text>{row.party_name}</Text>
-                    <Text style={styles.muted}>{row.date}</Text>
-                    {row.conflicting_copies ? (
-                      <Text style={styles.error}>
-                        Different PDFs exist for this bill. Ask the office to
-                        resolve them before downloading or sending.
-                      </Text>
-                    ) : (
-                      pdfActions("invoices", row.file_id)
-                    )}
-                  </View>
-                ))}
-              </ScrollView>
-            ) : (
-              <ScrollView contentContainerStyle={styles.content}>
-                <Text style={styles.title}>Your statements</Text>
-                <Button
-                  title="Refresh history"
-                  disabled={busy}
-                  secondary
-                  onPress={() => void open("history")}
-                />
-                {!history.length && (
-                  <Text style={styles.muted}>
-                    Your requested statements will appear here.
-                  </Text>
-                )}
-                {history.map((row) => (
-                  <View key={row.id}>{reportCard(row)}</View>
-                ))}
+                >
+                  <Text style={styles.dangerText}>Disconnect this phone</Text>
+                </Pressable>
+                <Text style={[styles.noteText, { textAlign: "center" }]}>
+                  H.S. Traders Office · Version 1.1
+                </Text>
               </ScrollView>
             )}
-          </>
+          </View>
+        )}
+        {session && (
+          <View style={styles.nav}>
+            {(
+              [
+                ["home", "home", "Home"],
+                ["outstanding", "statement", "Statements"],
+                ["invoices", "search", "Bills"],
+                ["history", "history", "Activity"],
+              ] as const
+            ).map(([key, icon, title]) => (
+              <Pressable
+                key={key}
+                accessibilityRole="tab"
+                accessibilityState={{
+                  selected: screen === key,
+                  disabled: busy,
+                }}
+                disabled={busy}
+                onPress={() => void open(key)}
+                style={({ pressed }) => [
+                  styles.navItem,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <View
+                  style={[styles.navIcon, screen === key && styles.navActive]}
+                >
+                  <Icon
+                    name={icon}
+                    size={21}
+                    color={screen === key ? palette.navy : palette.muted}
+                  />
+                </View>
+                <Text
+                  style={[
+                    styles.navLabel,
+                    screen === key && styles.navLabelActive,
+                  ]}
+                >
+                  {title}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         )}
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -766,86 +1226,3 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#f4f6fa" },
-  loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  header: {
-    padding: 20,
-    backgroundColor: "white",
-    borderBottomColor: "#dce1ea",
-    borderBottomWidth: 1,
-  },
-  brand: { fontWeight: "800", fontSize: 20, color: "#17263b" },
-  content: { padding: 20, gap: 18, paddingBottom: 40 },
-  title: { fontSize: 29, fontWeight: "800", color: "#17263b" },
-  muted: { fontSize: 14, lineHeight: 22, color: "#5c687b" },
-  label: { fontSize: 15, fontWeight: "700", color: "#25344a" },
-  input: {
-    backgroundColor: "white",
-    borderColor: "#b9c3d3",
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 17,
-    minHeight: 52,
-    color: "#17263b",
-  },
-  card: {
-    padding: 20,
-    backgroundColor: "white",
-    borderRadius: 15,
-    borderColor: "#dce1ea",
-    borderWidth: 1,
-    gap: 14,
-  },
-  cardTitle: { fontSize: 21, fontWeight: "700", color: "#17263b" },
-  button: {
-    backgroundColor: "#2256c4",
-    minHeight: 52,
-    borderRadius: 10,
-    padding: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  buttonText: { color: "white", fontSize: 16, fontWeight: "700" },
-  secondary: {
-    backgroundColor: "#eff3fb",
-    borderColor: "#cbd6eb",
-    borderWidth: 1,
-  },
-  secondaryText: { color: "#214c9b" },
-  disabled: { opacity: 0.45 },
-  pressed: { opacity: 0.75 },
-  error: { fontSize: 15, color: "#a82b32", lineHeight: 23 },
-  notice: { padding: 16, backgroundColor: "#fff1ef", gap: 10 },
-  link: {
-    color: "#2256c4",
-    fontWeight: "600",
-    fontSize: 15,
-    paddingVertical: 6,
-  },
-  tabs: { flexDirection: "row", backgroundColor: "white", padding: 8, gap: 2 },
-  tab: { flex: 1, paddingVertical: 12, alignItems: "center", borderRadius: 8 },
-  tabText: { fontSize: 13, color: "#5c687b", fontWeight: "600" },
-  activeTab: { backgroundColor: "#e8effe" },
-  activeTabText: { color: "#2256c4" },
-  party: {
-    backgroundColor: "white",
-    padding: 17,
-    marginBottom: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#dce1ea",
-  },
-  partyName: { fontSize: 16, color: "#17263b", fontWeight: "600" },
-  yearList: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  year: {
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#cbd6eb",
-    borderRadius: 9,
-  },
-  actions: { gap: 10 },
-  amount: { fontSize: 29, fontWeight: "800", color: "#173b82" },
-  status: { fontWeight: "700", fontSize: 17, color: "#2256c4" },
-});
