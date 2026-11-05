@@ -1,6 +1,6 @@
 # Android outstanding bills app — proposed implementation
 
-Status: Android app, private mobile gateway, office access-management page, exact invoice lookup, PDF downloads/sharing, own-number WhatsApp delivery and the five-second office warning are implemented. The signed APK is built locally. Native BUSY export still requires a successful live calibration check: the earlier favourite-menu approach did not reach the expected screen; it was replaced with Account Ledger → Ctrl+R Receivable, but its live retest was blocked after the physical Escape stop. Do not treat fresh BUSY reports as verified yet. Android first, for the owner and selected employees. Fresh reports depend on the office PC staying powered on, online, unlocked, with H.S. TRADERS logged into BUSY. All generation is explicitly requested; no scheduler.
+Status: Android app, private mobile gateway, office access-management page, exact invoice lookup, PDF downloads/sharing, own-number WhatsApp delivery and the five-second office warning are implemented. The signed APK is built locally. Native BUSY export through Favourites and direct PDF export passed a live calibration check on 5 November 2026. Android first, for the owner and selected employees. Fresh reports depend on the office PC staying powered on, online, unlocked, with H.S. TRADERS logged into BUSY. All generation is explicitly requested; no scheduler.
 
 ## Product flow
 
@@ -14,11 +14,11 @@ Use Expo / React Native / TypeScript, producing a signed Android APK for private
 
 ## Report settings from supplied screenshots
 
-Open Bills Receivable through Outstanding Analysis or the configured favourite, then One Account. STANDARD format, exact party account, Pending entries, account displayed by Name, minimum age 0 days, due-day basis D. Show On Account Amount & Ledger Balance = Yes; salesman filter and all other shown detail toggles = No.
+From the company homepage use Alt+F, type O to select OUTSTANDING BILLS, then Enter and One Account. Do not navigate through Account Ledger. STANDARD format, exact party account, Pending entries, account displayed by Name, minimum age 0 days, due-day basis D. Show On Account Amount & Ledger Balance = Yes; salesman filter and all other shown detail toggles = No.
 
 Confirmed start date: 16 January 2025, before the current financial year. Do not limit outstanding reports to the current year. Ending date and Bills Status as on default to the requested date. Preserve partial payments and tiny residual balances, including the example's ₹1. Keep reference amount, pending amount, on-account amount and ledger balance distinct.
 
-Use the existing native PDF layout: Print → As it is From Grid → S.No., Dated, Ref. No., Ref. Amt., Pending Amt., Due Days → portrait → Preview → Save document to PDF. Type, Due and Due Date columns are excluded. During calibration, test whether direct PDF export produces the identical layout; otherwise use the demonstrated preview/save route.
+Use Alt+E → PDF → a unique application-owned filename → OK. Direct export includes Dated, Type, Ref. No., Ref. Amt., Pending Amt., Due, Due Date and Due Day columns with a Total footer. Verify report identity, exact party, start/end/status dates, columns and reference/pending totals before exposing or sending it. The existing bridge sends this same verified PDF to the mobile user's approved WhatsApp number when requested.
 
 ## Office integration
 

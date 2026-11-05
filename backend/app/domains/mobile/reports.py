@@ -19,6 +19,13 @@ from app.domains.pouncha_sync.parser import SyncError
 REPORT_START = date(2025, 1, 16)
 
 
+def statement_filename(party: str) -> str:
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", party).strip(" .")[:140].rstrip(" .")
+    if not name or re.fullmatch(r"CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]", name, re.I):
+        name = "Party " + name
+    return name + ".pdf"
+
+
 def verify_report(path: Path, party: str, as_of: date) -> dict[str, Any]:
     if not path.is_file() or not 0 < path.stat().st_size <= 25 * 1024 * 1024:
         raise SyncError("BUSY did not create a usable report PDF.")
@@ -54,10 +61,19 @@ def verify_report(path: Path, party: str, as_of: date) -> dict[str, Any]:
         or parse(dates[2]) != as_of
     ):
         raise SyncError("The PDF party or report dates did not match. It was not shared.")
-    for heading in ("S.No.", "Dated", "Ref. No.", "Ref. Amt.", "Pending Amt.", "Due Days"):
+    for heading in ("Dated", "Ref. No.", "Ref. Amt.", "Pending Amt."):
         if heading not in flat:
-            raise SyncError("BUSY's report columns changed. Check the print-from-grid settings.")
-    totals = re.search(r"Grand Total\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})", flat, re.I)
+            raise SyncError("BUSY's report columns changed. Check the outstanding export settings.")
+    printed = "S.No." in flat and "Due Days" in flat
+    exported = "Type" in flat and "Due Date" in flat and "Due Day" in flat
+    if not (printed or exported):
+        raise SyncError("The PDF is not a supported BUSY outstanding report layout.")
+    total_label = r"Grand Total" if printed else r"(?<!\w)Total"
+    totals = re.search(
+        total_label + r"\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+(?:\(\s*)?On Acc\.",
+        flat,
+        re.I,
+    )
     if totals is None:
         raise SyncError("The PDF totals could not be verified. It was not shared.")
     pending = Decimal(totals[2].replace(",", ""))
@@ -92,42 +108,7 @@ class OutstandingExporter(BusyExporter):
         company = re.search(r"\|\s*([^|]+?)\s*\(F\.Y\.", main.window_text(), re.I)
         if company is None or normalize(company[1]) != normalize(self.settings.pouncha_company):
             raise SyncError("BUSY must be logged into H.S. TRADERS.")
-        # Account Ledger exposes the documented Ctrl+R Receivable shortcut.
-        # Reuse verified Alt+L navigation rather than depending on favourite order.
-        target, ledger_fields = self._open_ledger(main, desktop)
-        day = as_of.strftime("%d-%m-%Y")
-        ledger_values = [
-            "STANDARD",
-            party,
-            day,
-            day,
-            "Single Account (Auto)",
-            "Name",
-            "N",
-            "N",
-            "N",
-            "N",
-            "N",
-            "N",
-            "N",
-            "N",
-            "Y",
-        ]
-        for control, value in zip(ledger_fields, ledger_values, strict=True):
-            self._set(control, value)
-        self._click(target, r"OK\s*\(F2\)")
-        target = self._wait(
-            main, desktop, self._is_report, self.settings.pouncha_export_timeout_seconds
-        )
-        target.type_keys("^r", pause=0.2)
-        target = self._wait(
-            main,
-            desktop,
-            lambda root: len(self._edits(root)) == 19 or bool(self._buttons(root, "One Account")),
-        )
-        if self._buttons(target, "One Account"):
-            self._click(target, "One Account")
-            target = self._wait(main, desktop, lambda root: len(self._edits(root)) == 19)
+        target = self._open_outstanding(main, desktop)
         edits = self._edits(target)
         # Group the two columns; screen scaling affects coordinates, not relative order.
         left_edge, right_edge = (
@@ -175,39 +156,72 @@ class OutstandingExporter(BusyExporter):
         target = self._wait(
             main, desktop, self._is_report, self.settings.pouncha_export_timeout_seconds
         )
-        target.type_keys("%p", pause=0.2)
+        return self._export_pdf(main, desktop, target, directory, party, as_of)
+
+    def _open_outstanding(self, main: Any, desktop: Any) -> Any:
+        if not self._home(main, desktop):
+            raise SyncError("BUSY did not return to its homepage after 15 Escape presses.")
+        self._guard(main, desktop)[0].type_keys("%f", pause=0.2)
+        # Select by initial, not by the saved favourite's row position.
+        self._guard(main, desktop)[0].type_keys("o", pause=0.2)
+        self._guard(main, desktop)[0].type_keys("{ENTER}", pause=0.2)
+        target = self._wait(main, desktop, lambda root: bool(self._buttons(root, "One Account")))
+        self._click(target, "One Account")
+        return self._wait(main, desktop, lambda root: len(self._edits(root)) == 19)
+
+    def _export_pdf(
+        self, main: Any, desktop: Any, target: Any, directory: Path, party: str, as_of: date
+    ) -> Path:
+        target.type_keys("%e", pause=0.2)
         target = self._wait(
-            main, desktop, lambda root: bool(self._buttons(root, "As it is From Grid"))
+            main,
+            desktop,
+            lambda root: bool(re.fullmatch(r"Export (?:Report )?Data", root.window_text(), re.I)),
         )
-        self._click(target, "As it is From Grid")
-        target = self._wait(main, desktop, lambda root: bool(self._buttons(root, "Default")))
-        # Keep the demonstrated saved grid layout; the final PDF verifier enforces it.
-        self._click(target, "OK")
-        target = self._wait(main, desktop, lambda root: bool(self._buttons(root, "Preview")))
-        self._click(target, "Preview")
-        target = self._wait(main, desktop, lambda root: "Print Preview" in root.window_text())
-        pdf_buttons = [
-            button
-            for button in self._visible(target, "Button")
-            if re.search(r"(?:save|export).*PDF|PDF.*(?:save|export)", button.window_text(), re.I)
-        ]
-        if len(pdf_buttons) != 1:
-            raise SyncError("BUSY's PDF save control needs calibration. No document was shared.")
-        pdf_buttons[0].invoke()
-        target = self._wait(main, desktop, lambda root: bool(self._buttons(root, "Save")))
         fields = self._edits(target)
-        name_fields = [
-            field for field in fields if re.search(r"file name", field.element_info.name, re.I)
+        if len(fields) < 2:
+            raise SyncError("BUSY's export format and filename controls could not be identified.")
+        format_fields = [
+            field
+            for field in fields
+            if field.get_value().strip()
+            in {
+                "Microsoft Excel",
+                "Google Sheet",
+                "PDF",
+                "HTML",
+                "CSV",
+                "Text File - Delimited",
+                "Text File - Fixed Width",
+            }
         ]
-        if len(name_fields) != 1:
-            raise SyncError("BUSY's Save PDF filename field could not be identified.")
-        path = directory / "outstanding.pdf"
-        self._set(name_fields[0], str(path))
-        self._click(target, "Save")
+        if len(format_fields) != 1:
+            raise SyncError("BUSY's export format selector is unavailable or ambiguous.")
+        format_fields[0].type_keys("p{ENTER}", pause=0.2)
+        # Changing format disables Excel-only fields. Read the layout again.
+        target = self._wait(
+            main,
+            desktop,
+            lambda root: (
+                len(self._edits(root)) in (2, 3)
+                and all(not field.get_value().strip() for field in self._edits(root)[2:])
+            ),
+        )
+        fields = self._edits(target)
+        if fields[0].get_value().strip().upper() != "PDF":
+            raise SyncError("BUSY did not retain PDF as the export format.")
+        path = directory / statement_filename(party)
+        if path.exists():
+            raise SyncError("The report destination already exists; it was not overwritten.")
+        self._set(fields[1], str(path))
+        self._click(target, "OK")
         previous = -1
         stable = 0
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + self.settings.pouncha_export_timeout_seconds
         while time.monotonic() < deadline:
+            for window in self._guard(main, desktop):
+                if re.search(r"Open File Now", window.window_text(), re.I):
+                    self._click(window, "No")
             if path.is_file():
                 size = path.stat().st_size
                 stable = stable + 1 if size > 0 and size == previous else 0
