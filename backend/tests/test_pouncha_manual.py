@@ -114,6 +114,83 @@ def make_service(tmp_path: Path) -> tuple[PounchaService, FakeSheet, FakeExporte
     return PounchaService(settings, repository, sheet, exporter), sheet, exporter
 
 
+@pytest.mark.parametrize("failure", [None, "export", "parse", "append"])
+def test_generated_excel_is_removed_on_success_and_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str | None
+) -> None:
+    service, sheet, exporter = make_service(tmp_path)
+    paths: list[Path] = []
+    original = tmp_path / "original-manual-export.xlsx"
+    original.write_bytes(export_bytes())
+    original_bytes = original.read_bytes()
+
+    def capture(start: date, end: date, directory: Path) -> Path:
+        path = directory / "sales.xlsx"
+        paths.append(path)
+        path.write_bytes(b"invalid" if failure == "parse" else original.read_bytes())
+        if failure == "export":
+            raise SyncError("Export failed after creating a file")
+        return path
+
+    monkeypatch.setattr(exporter, "export", capture)
+    sheet.lose_response = failure == "append"
+    run = service.queue(START, END, False, "busy")
+    service.execute(run["run_id"])
+    assert paths and not paths[0].exists() and not paths[0].parent.exists()
+    assert original.read_bytes() == original_bytes
+    assert service.repository.get(run["run_id"])["status"] == (
+        "needs_review" if failure == "append" else "failed" if failure else "success"
+    )
+
+
+def test_excel_export_switches_from_pdf_before_reading_excel_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    exporter = BusyExporter(Settings())
+    events: list[str] = []
+
+    class Field:
+        def __init__(self, value: str = "") -> None:
+            self.value = value
+
+        def set_edit_text(self, value: str) -> None:
+            events.append(value)
+            self.value = value
+
+        def get_value(self) -> str:
+            return self.value
+
+        def type_keys(self, key: str, **kwargs: Any) -> None:
+            assert key == "m{ENTER}"
+            self.value = "Microsoft Excel"
+            events.append("Microsoft Excel")
+            events.append("commit")
+            window.fields = excel_fields
+
+    class Window:
+        fields: list[Field]
+
+        def window_text(self) -> str:
+            return "Export Data"
+
+    window = Window()
+    format_field = Field("PDF")
+    window.fields = [format_field, Field("old-pdf-name"), Field()]
+    excel_fields = [format_field, Field(), Field("Zero"), Field(), Field("Not Reqd.")]
+    monkeypatch.setattr(exporter, "_edits", lambda root: root.fields)
+    monkeypatch.setattr(exporter, "_guard", lambda *_: [window])
+    path = tmp_path / "sales"
+    assert exporter._prepare_excel_export(None, None, window, path) is window
+    assert events[:2] == ["Microsoft Excel", "commit"]
+    assert [field.value for field in excel_fields] == [
+        "Microsoft Excel",
+        str(path),
+        "Zero",
+        "",
+        "Not Reqd.",
+    ]
+
+
 def test_parser_uses_labels_and_stops_at_voucher_and_footer(tmp_path: Path) -> None:
     records = parse(tmp_path, extra=10)
     assert len(records) == 2

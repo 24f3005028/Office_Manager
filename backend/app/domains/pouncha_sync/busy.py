@@ -43,24 +43,29 @@ class BusyExporter:
     def _active_window(main: Any, desktop: Any) -> Any:
         # VB6 exposes owned modal forms beneath the disabled company window in
         # UIA. Desktop.windows() alone does not enumerate these forms.
-        roots = list(desktop.windows(process=main.process_id(), visible_only=True))
-        roots.extend(main.descendants(control_type="Window"))
-        roots.append(main)
-        active: dict[int, Any] = {}
-        for root in roots:
-            if (
-                root.handle
-                and root.process_id() == main.process_id()
-                and root.is_visible()
-                and root.is_enabled()
-            ):
-                active[root.handle] = root
-        if len(active) != 1:
-            raise SyncError(
-                "BUSY's active form could not be identified safely. "
-                "The window may be blocked or changing; retry after it finishes."
-            )
-        return next(iter(active.values()))
+        for attempt in range(8):
+            roots = list(desktop.windows(process=main.process_id(), visible_only=True))
+            roots.extend(main.descendants(control_type="Window"))
+            roots.append(main)
+            active: dict[int, Any] = {}
+            for root in roots:
+                if (
+                    root.handle
+                    and root.process_id() == main.process_id()
+                    and root.is_visible()
+                    and root.is_enabled()
+                ):
+                    active[root.handle] = root
+            if len(active) == 1:
+                return next(iter(active.values()))
+            # Modal forms briefly overlap while BUSY changes export format.
+            # Reobserve without sending input; never choose an ambiguous form.
+            if attempt < 7:
+                time.sleep(0.15)
+        raise SyncError(
+            "BUSY's active form could not be identified safely. "
+            "The window may be blocked or changing; retry after it finishes."
+        )
 
     def _is_report(self, root: Any) -> bool:
         return any(
@@ -163,6 +168,50 @@ class BusyExporter:
             )
         raise SyncError("The Account Ledger options layout changed. No report fields were guessed.")
 
+    def _prepare_excel_export(self, main: Any, desktop: Any, window: Any, filename: Path) -> Any:
+        fields = self._edits(window)
+        if len(fields) < 2:
+            raise SyncError("BUSY's export format control could not be identified.")
+        # The preceding outstanding report may have left PDF selected. Switch
+        # format before expecting Excel's five fields, then commit with Tab.
+        format_fields = [
+            field
+            for field in fields
+            if field.get_value().strip()
+            in {
+                "Microsoft Excel",
+                "Google Sheet",
+                "PDF",
+                "HTML",
+                "CSV",
+                "Text File - Delimited",
+                "Text File - Fixed Width",
+            }
+        ]
+        if len(format_fields) != 1:
+            raise SyncError("BUSY's export format selector is unavailable or ambiguous.")
+        # This is BUSY's custom list, not a normal textbox: select its M item
+        # and confirm it, rather than changing only the visible edit text.
+        format_fields[0].type_keys("m{ENTER}", pause=0.2)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            target = self._guard(main, desktop)[0]
+            if re.fullmatch(r"Export (?:Report )?Data", target.window_text().strip(), re.I):
+                fields = self._edits(target)
+                if len(fields) == 5:
+                    values = ["Microsoft Excel", str(filename), "Zero", "", "Not Reqd."]
+                    if fields[0].get_value().strip().casefold() != "microsoft excel":
+                        raise SyncError("BUSY did not retain Microsoft Excel as the export format.")
+                    for control, value in zip(fields[1:], values[1:], strict=True):
+                        self._set(control, value)
+                    if [control.get_value().strip().casefold() for control in fields] != [
+                        value.casefold() for value in values
+                    ]:
+                        raise SyncError("BUSY changed the Excel export options. Export stopped.")
+                    return target
+            time.sleep(0.2)
+        raise SyncError("BUSY did not switch to Microsoft Excel export. No file was exported.")
+
     def export(self, start: date, end: date, directory: Path) -> Path:
         if sys.platform != "win32":
             raise SyncError("BUSY desktop export requires an interactive Windows session.")
@@ -225,14 +274,8 @@ class BusyExporter:
                 time.sleep(0.2)
             if export_window is None:
                 raise SyncError("BUSY's Export Report Data dialog was not found.")
-            fields = self._edits(export_window)
-            if len(fields) != 5:
-                raise SyncError("BUSY's export controls changed. Use the Excel upload fallback.")
             filename = directory / "sales"
-            for control, value in zip(
-                fields, ["Microsoft Excel", str(filename), "Zero", "", "Not Reqd."], strict=True
-            ):
-                self._set(control, value)
+            export_window = self._prepare_excel_export(main, desktop, export_window, filename)
             self._click(export_window, "OK")
             previous_size = -1
             stable = 0
