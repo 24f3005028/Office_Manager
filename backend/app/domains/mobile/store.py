@@ -33,6 +33,11 @@ CREATE TABLE IF NOT EXISTS mobile_deliveries (
  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES mobile_users(id), artifact_key TEXT NOT NULL,
  operation_id TEXT NOT NULL UNIQUE, status TEXT NOT NULL, message_id TEXT, error TEXT,
  created_at TEXT NOT NULL, UNIQUE(user_id, artifact_key));
+CREATE TABLE IF NOT EXISTS mobile_office_actions (
+ id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES mobile_users(id),
+ request_key TEXT NOT NULL, kind TEXT NOT NULL, payload_hash TEXT NOT NULL,
+ status TEXT NOT NULL, upstream_id TEXT, response TEXT, created_at TEXT NOT NULL,
+ UNIQUE(user_id,request_key));
 """
 
 
@@ -257,6 +262,61 @@ class MobileStore:
                 )
             ]
 
+    def reserve_office_action(
+        self, user_id: str, key: str, kind: str, payload: dict[str, Any]
+    ) -> tuple[dict[str, Any], bool]:
+        fingerprint = digest(json.dumps(payload, sort_keys=True))
+        with closing(self.database.connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT * FROM mobile_office_actions WHERE user_id=? AND request_key=?",
+                (user_id, key),
+            ).fetchone()
+            if row:
+                if row["kind"] != kind or row["payload_hash"] != fingerprint:
+                    raise ValueError("This request was already used for a different action.")
+                return dict(row), False
+            action_id = uuid4().hex
+            db.execute(
+                "INSERT INTO mobile_office_actions "
+                "(id,user_id,request_key,kind,payload_hash,status,created_at) "
+                "VALUES (?,?,?,?,?,'submitting',?)",
+                (action_id, user_id, key, kind, fingerprint, now()),
+            )
+            return dict(
+                db.execute(
+                    "SELECT * FROM mobile_office_actions WHERE id=?", (action_id,)
+                ).fetchone()
+            ), True
+
+    def finish_office_action(
+        self, action_id: str, status: str, upstream_id: str | None, response: dict[str, Any]
+    ) -> None:
+        with closing(self.database.connect()) as db, db:
+            db.execute(
+                "UPDATE mobile_office_actions SET status=?,upstream_id=?,response=? WHERE id=?",
+                (status, upstream_id, json.dumps(response), action_id),
+            )
+
+    def office_action(self, action_id: str, user_id: str) -> dict[str, Any] | None:
+        with closing(self.database.connect()) as db:
+            row = db.execute(
+                "SELECT * FROM mobile_office_actions WHERE id=? AND user_id=?",
+                (action_id, user_id),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def office_actions(self, user_id: str) -> list[dict[str, Any]]:
+        with closing(self.database.connect()) as db:
+            return [
+                dict(row)
+                for row in db.execute(
+                    "SELECT * FROM mobile_office_actions WHERE user_id=? "
+                    "ORDER BY created_at DESC LIMIT 30",
+                    (user_id,),
+                )
+            ]
+
     def update_job(self, job_id: str, **values: Any) -> None:
         allowed = {"status", "error", "finished_at", "pdf_path", "pdf_hash", "details"}
         if not values or set(values) - allowed:
@@ -269,6 +329,18 @@ class MobileStore:
 
     def recover(self) -> None:
         with closing(self.database.connect()) as db, db:
+            db.execute(
+                "UPDATE mobile_office_actions SET status='needs_review',response=? "
+                "WHERE status='submitting'",
+                (
+                    json.dumps(
+                        {
+                            "error": "Office restarted before confirming this action. "
+                            "Check the dashboard before retrying."
+                        }
+                    ),
+                ),
+            )
             db.execute(
                 "UPDATE mobile_jobs SET status='failed',error=?,finished_at=? "
                 "WHERE status IN ('queued','warning','generating')",

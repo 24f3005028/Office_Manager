@@ -9,7 +9,7 @@ from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 from app.config import Settings
-from app.domains.mobile.desktop import desktop_lock
+from app.domains.mobile.desktop import desktop_lock, office_warning
 from app.domains.pouncha_sync.parser import Sale, SyncError, bill_key, parse_sales
 from app.domains.pouncha_sync.repository import RunRepository
 from app.domains.pouncha_sync.sheets import GoogleSheet, Snapshot, compare, equivalent
@@ -77,7 +77,9 @@ class PounchaService:
             source, preview, start.isoformat() if start else None, end.isoformat()
         )
 
-    def execute(self, run_id: str, upload: bytes | None = None) -> None:
+    def execute(
+        self, run_id: str, upload: bytes | None = None, warn_before_export: bool = False
+    ) -> None:
         run = self.repository.get(run_id)
         if run is None or run["status"] != "queued":
             return
@@ -107,6 +109,8 @@ class PounchaService:
                     if self.exporter is None:
                         raise SyncError("BUSY export adapter is not available on this computer.")
                     with desktop_lock(self.settings.database_path):
+                        if warn_before_export and not office_warning():
+                            raise SyncError("Someone is using BUSY. Request cancelled by office.")
                         path = self.exporter.export(start, end, directory)
                 self.repository.update(run_id, stage="parsing")
                 records = parse_sales(path, self.settings.pouncha_company, start, end)

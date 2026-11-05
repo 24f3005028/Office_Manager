@@ -18,7 +18,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.config import Settings
 from app.db import Database
 from app.domains.documents.scanner import DocumentScanner
-from app.domains.mobile.invoices import InvoiceCatalogue
+from app.domains.mobile.invoices import InvoiceCatalogue, invoice_filename
+from app.domains.mobile.office_routes import install_office_routes
 from app.domains.mobile.reports import statement_filename
 from app.domains.mobile.service import MobileService
 from app.domains.mobile.store import MobileStore
@@ -238,8 +239,8 @@ def create_mobile_app(
     @app.get("/mobile/v1/invoices/{file_id}/pdf")
     def invoice_pdf(file_id: str, request: Request, current: CurrentUser) -> FileResponse:
         try:
-            path, _ = instance(request).catalogue.file(file_id)
-            return FileResponse(path, media_type="application/pdf", filename=path.name)
+            path, row = instance(request).catalogue.file(file_id)
+            return FileResponse(path, media_type="application/pdf", filename=invoice_filename(row))
         except OSError as exc:
             raise HTTPException(
                 404, "The saved bill PDF is unavailable. Ask the office to check it."
@@ -264,6 +265,7 @@ def create_mobile_app(
         except ValueError as exc:
             raise HTTPException(404, str(exc)) from exc
 
+    install_office_routes(app, user)
     return app
 
 

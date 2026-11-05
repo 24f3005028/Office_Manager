@@ -12,6 +12,7 @@ from typing import Any
 import pymupdf
 
 from app.domains.documents.scanner import DocumentScanner
+from app.domains.mobile.reports import statement_filename
 
 VOUCHER = r"([A-Z]+(?:/[A-Z]+)?)/(?:20)?(\d{2})-(?:20)?(\d{2})/(\d+)"
 LEGACY = r"([A-Z]+(?:/[A-Z]+)?)/(\d+)/(?:20)?(\d{2})-(?:20)?(\d{2})"
@@ -20,6 +21,13 @@ HEADER = re.compile(
     re.I,
 )
 FULL = re.compile(VOUCHER, re.I)
+
+
+def invoice_filename(row: dict[str, Any]) -> str:
+    party = str(row.get("party_name") or "").strip()
+    if not party or party == "See PDF for party name":
+        raise ValueError("The party name could not be read. Ask the office to check this bill PDF.")
+    return statement_filename(str(row["bill_number"]) + " - " + party)
 
 
 def parse_number(value: str) -> tuple[str, str, int] | None:

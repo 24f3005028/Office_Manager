@@ -191,6 +191,17 @@ def test_excel_export_switches_from_pdf_before_reading_excel_options(
     ]
 
 
+def test_mobile_pouncha_office_warning_cancellation_never_exports(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service, sheet, exporter = make_service(tmp_path)
+    monkeypatch.setattr("app.domains.pouncha_sync.service.office_warning", lambda: False)
+    run = service.queue(START, END, False, "busy")
+    service.execute(run["run_id"], warn_before_export=True)
+    assert exporter.calls == sheet.writes == 0
+    assert "cancelled by office" in service.repository.get(run["run_id"])["error"]
+
+
 def test_parser_uses_labels_and_stops_at_voucher_and_footer(tmp_path: Path) -> None:
     records = parse(tmp_path, extra=10)
     assert len(records) == 2

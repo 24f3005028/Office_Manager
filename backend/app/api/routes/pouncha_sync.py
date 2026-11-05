@@ -37,6 +37,7 @@ class RunRequest(BaseModel):
     start_date: date | None = None
     end_date: date
     preview_only: bool = False
+    office_warning: bool = False
 
 
 def service(request: Request) -> PounchaService:
@@ -55,7 +56,7 @@ def run(request: Request, payload: RunRequest, tasks: BackgroundTasks) -> dict[s
         result = instance.queue(payload.start_date, payload.end_date, payload.preview_only, "busy")
     except SyncError as exc:
         raise HTTPException(409, str(exc)) from exc
-    tasks.add_task(instance.execute, result["run_id"])
+    tasks.add_task(instance.execute, result["run_id"], None, payload.office_warning)
     return result
 
 

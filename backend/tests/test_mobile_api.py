@@ -336,3 +336,110 @@ async def test_statement_attachment_uses_party_name_and_approved_recipient(
     assert b"919999999999@c.us" in captured[0].content
     assert service.report_file(user["id"], job["id"])[0].is_file()
     service.close()
+
+
+@pytest.mark.parametrize("kind", ["send", "pouncha"])
+def test_mobile_office_actions_are_authenticated_owned_and_idempotent(
+    runtime: Any, kind: str
+) -> None:
+    service, _ = runtime
+    posted: list[httpx.Request] = []
+    upstream_id = "a" * 32
+    result = {"job_id": upstream_id, "run_id": upstream_id, "status": "queued", "files": []}
+
+    def office(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "127.0.0.1" and request.url.port == 8000
+        path = request.url.path
+        if path == "/api/whatsapp/contacts":
+            return httpx.Response(
+                200,
+                json=[{"id": "919999999999@c.us", "name": "Customer", "number": "919999999999"}],
+            )
+        if request.method == "POST":
+            posted.append(request)
+        if path in {"/api/send-jobs", "/api/pouncha-sync/run"}:
+            return httpx.Response(202, json=result)
+        if path in {f"/api/send-jobs/{upstream_id}", f"/api/pouncha-sync/runs/{upstream_id}"}:
+            return httpx.Response(200, json=result)
+        raise AssertionError(f"Unexpected office operation: {path}")
+
+    service.office.transport = httpx.MockTransport(office)
+    payload: dict[str, Any] = {"confirmed": True, "request_key": "same-confirmed-request"}
+    payload.update(
+        {"file_ids": ["b" * 32], "recipient": "919999999999@c.us", "message": "Attached"}
+        if kind == "send"
+        else {"end_date": "2026-11-05", "preview_only": True}
+    )
+    with TestClient(create_mobile_app(service=service)) as client:
+        alice, bob = login(client, service), login(client, service)
+        assert client.post(f"/mobile/v1/office/{kind}", json=payload).status_code == 401
+        assert (
+            client.post(
+                f"/mobile/v1/office/{kind}", json=payload | {"confirmed": False}, headers=alice
+            ).status_code
+            == 422
+        )
+        first = client.post(f"/mobile/v1/office/{kind}", json=payload, headers=alice)
+        assert first.status_code == 202, first.text
+        action_id = first.json()["id"]
+        second = client.post(f"/mobile/v1/office/{kind}", json=payload, headers=alice)
+        assert second.json()["id"] == action_id and len(posted) == 1
+        if kind == "pouncha":
+            assert posted[0].read().find(b'"office_warning":true') >= 0
+        assert client.get(f"/mobile/v1/office/actions/{action_id}", headers=bob).status_code == 409
+        assert (
+            client.post(
+                f"/mobile/v1/office/actions/{action_id}/cancel", json={}, headers=bob
+            ).status_code
+            == 409
+        )
+        assert client.get("/mobile/v1/office/actions", headers=bob).json() == []
+        assert client.get("/api/settings", headers=alice).status_code == 404
+        assert (
+            client.post(
+                "/mobile/v1/office/send", json=payload | {"url": "https://evil.test"}, headers=alice
+            ).status_code
+            == 422
+        )
+
+
+def test_mobile_office_unknown_response_is_never_replayed(runtime: Any) -> None:
+    service, _ = runtime
+    posted = []
+
+    def office(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/whatsapp/contacts":
+            return httpx.Response(200, json=[{"id": "919999999999@c.us", "name": "Customer"}])
+        posted.append(request)
+        raise httpx.ReadTimeout("Response lost after queueing", request=request)
+
+    service.office.transport = httpx.MockTransport(office)
+    payload = {
+        "confirmed": True,
+        "request_key": "unknown-result-request",
+        "file_ids": ["b" * 32],
+        "recipient": "919999999999@c.us",
+    }
+    with TestClient(create_mobile_app(service=service)) as client:
+        headers = login(client, service)
+        first = client.post("/mobile/v1/office/send", json=payload, headers=headers)
+        second = client.post("/mobile/v1/office/send", json=payload, headers=headers)
+        assert first.json()["state"] == second.json()["state"] == "needs_review"
+        assert len(posted) == 1
+        other = client.post(
+            "/mobile/v1/office/send",
+            json=payload | {"recipient": "911111111111@c.us"},
+            headers=headers,
+        )
+        assert other.status_code == 409 and len(posted) == 1
+
+
+def test_invoice_download_name_requires_bill_and_party(runtime: Any) -> None:
+    from app.domains.mobile.invoices import invoice_filename
+
+    assert (
+        invoice_filename({"bill_number": "HST/26-27/74", "party_name": "RAJAN TEXTILES"})
+        == "HST-26-27-74 - RAJAN TEXTILES.pdf"
+    )
+    with pytest.raises(ValueError, match="party name"):
+        invoice_filename({"bill_number": "HST/26-27/74", "party_name": "See PDF for party name"})

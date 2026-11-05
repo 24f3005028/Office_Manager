@@ -17,7 +17,8 @@ import httpx
 
 from app.config import Settings
 from app.domains.mobile.desktop import desktop_lock, office_warning
-from app.domains.mobile.invoices import InvoiceCatalogue
+from app.domains.mobile.invoices import InvoiceCatalogue, invoice_filename
+from app.domains.mobile.office import OfficeTools
 from app.domains.mobile.reports import (
     REPORT_START,
     OutstandingExporter,
@@ -41,6 +42,7 @@ class MobileService:
     ) -> None:
         self.settings, self.store, self.catalogue = settings, store, catalogue
         self.warning = warning
+        self.office = OfficeTools(store)
         self.exporter = exporter or OutstandingExporter(settings)
         self.directory = settings.database_path.expanduser().resolve().parent / "mobile-reports"
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mobile-reports")
@@ -154,8 +156,8 @@ class MobileService:
             path, report = self.report_file(user["id"], file_id)
             filename = statement_filename(report["party_name"])
         else:
-            path, _ = self.catalogue.file(file_id)
-            filename = path.name
+            path, invoice = self.catalogue.file(file_id)
+            filename = invoice_filename(invoice)
         content = path.read_bytes()
         checksum = hashlib.sha256(content).hexdigest()
         artifact = f"{kind}:{file_id}:{checksum}"
