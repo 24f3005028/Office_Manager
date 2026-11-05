@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import shutil
 import time
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -17,7 +17,7 @@ from app.db import Database
 from app.domains.documents.scanner import DocumentScanner
 from app.domains.mobile.accounts import account_names
 from app.domains.mobile.invoices import InvoiceCatalogue
-from app.domains.mobile.reports import verify_report
+from app.domains.mobile.reports import statement_filename, verify_report
 from app.domains.mobile.service import MobileService
 from app.domains.mobile.store import MobileStore
 from app.domains.pouncha_sync.parser import SyncError
@@ -85,6 +85,62 @@ def login(client: TestClient, service: MobileService, name: str = "Employee") ->
     return {"Authorization": "Bearer " + response.json()["token"]}
 
 
+def test_pairing_checks_approved_phone_without_consuming_wrong_number_invite(runtime: Any) -> None:
+    service, _ = runtime
+    invite = service.store.invite("Employee", "919999999999")
+    with TestClient(create_mobile_app(service=service)) as client:
+        body = {"invite_code": invite["invite_code"], "phone": "918888888888"}
+        assert client.post("/mobile/v1/pair", json=body).status_code == 400
+        body["phone"] = "919999999999"
+        response = client.post("/mobile/v1/pair", json=body)
+        assert response.status_code == 200
+        assert client.post("/mobile/v1/pair", json=body).status_code == 401
+
+
+def test_expired_reports_deleted_without_touching_fresh_or_archived_pdfs(runtime: Any) -> None:
+    service, _ = runtime
+    user = service.store.invite("Employee", "919999999999")
+    party = service.store.parties()[0]
+    jobs = []
+    for key in ("old-report", "fresh-report"):
+        job, _ = service.store.create_job(user["id"], party, "2026-11-05", key)
+        service.execute(job["id"])
+        jobs.append(service.store.job(job["id"]))
+    service.store.update_job(
+        jobs[0]["id"], finished_at=(datetime.now(UTC) - timedelta(hours=49)).isoformat()
+    )
+    service.cleanup_reports()
+    assert not Path(jobs[0]["pdf_path"]).exists()
+    assert Path(jobs[1]["pdf_path"]).is_file()
+    assert service.catalogue.search("26-27", "74")
+    service.close()
+
+
+def test_failed_export_pdf_is_deleted_immediately(runtime: Any) -> None:
+    service, _ = runtime
+    user = service.store.invite("Employee", "919999999999")
+    job, _ = service.store.create_job(
+        user["id"], service.store.parties()[0], "2026-11-05", "failed-export"
+    )
+
+    class FailedExporter:
+        def export_report(self, party: str, as_of: date, directory: Path) -> Path:
+            (directory / "partial.pdf").write_bytes(b"%PDF-partial")
+            raise SyncError("Export did not complete")
+
+    service.exporter = FailedExporter()
+    service.execute(job["id"])
+    assert service.store.job(job["id"])["status"] == "failed"
+    assert not (service.directory / job["id"]).exists()
+    service.close()
+
+
+def test_statement_filename_preserves_party_without_paths() -> None:
+    assert statement_filename("RAJAN TEXTILES") == "RAJAN TEXTILES.pdf"
+    assert statement_filename("../PARTY: ONE") == "-PARTY- ONE.pdf"
+    assert statement_filename("CON") == "Party CON.pdf"
+
+
 def test_gateway_has_no_office_routes_and_reads_never_start_busy(runtime: Any) -> None:
     service, calls = runtime
     with TestClient(create_mobile_app(service=service)) as client:
@@ -143,6 +199,12 @@ def test_report_warning_precedes_export_and_files_are_user_scoped(runtime: Any) 
         assert client.get(f"/mobile/v1/reports/{job_id}/pdf", headers=bob).status_code == 404
         assert client.get(f"/mobile/v1/reports/{job_id}/pdf", headers=alice).content.startswith(
             b"%PDF"
+        )
+        assert (
+            "EXAMPLE%20PARTY.pdf"
+            in client.get(f"/mobile/v1/reports/{job_id}/pdf", headers=alice).headers[
+                "content-disposition"
+            ]
         )
         assert client.post("/mobile/v1/reports", json=payload, headers=alice).json()["id"] == job_id
         assert calls == ["warning", "export"]
@@ -244,4 +306,33 @@ async def test_ambiguous_delivery_cannot_be_sent_again(runtime: Any, monkeypatch
     assert first["status"] == second["status"] == "needs_review"
     assert len(requests) == 1
     assert b"919999999999@c.us" in requests[0].content
+    service.close()
+
+
+async def test_statement_attachment_uses_party_name_and_approved_recipient(
+    runtime: Any, monkeypatch: Any
+) -> None:
+    service, _ = runtime
+    invite = service.store.invite("Employee", "919999999999")
+    user = next(row for row in service.store.users() if row["id"] == invite["id"])
+    job, _ = service.store.create_job(
+        user["id"], service.store.parties()[0], "2026-11-05", "send-party-name"
+    )
+    service.execute(job["id"])
+    captured = []
+    original_client = httpx.AsyncClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        raise httpx.ReadTimeout("Unknown send result", request=request)
+
+    monkeypatch.setattr(
+        httpx,
+        "AsyncClient",
+        lambda **kwargs: original_client(**kwargs, transport=httpx.MockTransport(handler)),
+    )
+    await service.send(user, "report", job["id"])
+    assert b'filename="EXAMPLE PARTY.pdf"' in captured[0].content
+    assert b"919999999999@c.us" in captured[0].content
+    assert service.report_file(user["id"], job["id"])[0].is_file()
     service.close()

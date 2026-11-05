@@ -77,19 +77,24 @@ class MobileStore:
                 ("Access revoked.", user_id),
             )
 
-    def pair(self, invite: str) -> dict[str, str] | None:
+    def pair(self, invite: str, phone: str | None = None) -> dict[str, str] | None:
         token = secrets.token_urlsafe(48)
         expires = (datetime.now(UTC) + timedelta(days=30)).isoformat()
         with closing(self.database.connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
-                "SELECT t.user_id FROM mobile_tokens t JOIN mobile_users u "
+                "SELECT t.user_id, u.phone FROM mobile_tokens t JOIN mobile_users u "
                 "ON u.id=t.user_id WHERE hash=? AND kind='invite' "
                 "AND expires>? AND u.active=1",
                 (digest(invite), now()),
             ).fetchone()
             if row is None:
                 return None
+            if phone is not None and phone != row["phone"]:
+                raise ValueError(
+                    "This mobile number does not match the invite. "
+                    "Check the country code and number with the office."
+                )
             db.execute("DELETE FROM mobile_tokens WHERE hash=?", (digest(invite),))
             db.execute(
                 "INSERT INTO mobile_tokens VALUES (?,?,?,?)",
@@ -239,6 +244,16 @@ class MobileStore:
                 for row in db.execute(
                     "SELECT * FROM mobile_jobs WHERE user_id=? ORDER BY created_at DESC LIMIT 30",
                     (user_id,),
+                )
+            ]
+
+    def cleanup_candidates(self) -> list[dict[str, Any]]:
+        with closing(self.database.connect()) as db:
+            return [
+                dict(row)
+                for row in db.execute(
+                    "SELECT id,status,finished_at FROM mobile_jobs "
+                    "WHERE status IN ('ready','failed','cancelled')"
                 )
             ]
 

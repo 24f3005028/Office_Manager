@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import re
+import shutil
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
@@ -15,7 +18,12 @@ import httpx
 from app.config import Settings
 from app.domains.mobile.desktop import desktop_lock, office_warning
 from app.domains.mobile.invoices import InvoiceCatalogue
-from app.domains.mobile.reports import REPORT_START, OutstandingExporter, verify_report
+from app.domains.mobile.reports import (
+    REPORT_START,
+    OutstandingExporter,
+    statement_filename,
+    verify_report,
+)
 from app.domains.mobile.store import MobileStore, now
 from app.domains.pouncha_sync.parser import SyncError
 from app.integrations.whatsapp.client import classify_send_error, parse_receipt
@@ -40,11 +48,36 @@ class MobileService:
     def close(self) -> None:
         self.pool.shutdown(wait=True, cancel_futures=True)
 
+    def _remove_report_directory(self, job_id: str) -> None:
+        if not re.fullmatch(r"[a-f0-9]{32}", job_id):
+            return
+        root = self.directory.resolve()
+        directory = self.directory / job_id
+        # Never follow a symlink or a stored, potentially stale PDF path.
+        if directory.is_symlink() or directory.resolve().parent != root:
+            return
+        try:
+            if directory.is_dir():
+                shutil.rmtree(directory)
+        except OSError:
+            logging.getLogger(__name__).warning("Report cleanup deferred for %s", job_id)
+
+    def cleanup_reports(self) -> None:
+        cutoff = datetime.now(UTC) - timedelta(hours=48)
+        for job in self.store.cleanup_candidates():
+            if job["status"] in {"failed", "cancelled"} or (
+                job["status"] == "ready"
+                and job["finished_at"]
+                and datetime.fromisoformat(job["finished_at"]) < cutoff
+            ):
+                self._remove_report_directory(job["id"])
+
     def submit(self, user_id: str, party_id: str, as_of: date, key: str) -> dict[str, Any]:
         from zoneinfo import ZoneInfo
 
         if not REPORT_START <= as_of <= datetime.now(ZoneInfo("Asia/Kolkata")).date():
             raise ValueError("Choose a status date from 16 January 2025 through today.")
+        self.cleanup_reports()
         party = self.store.party(party_id)
         if party is None:
             raise ValueError("Choose a party from the account list.")
@@ -100,8 +133,10 @@ class MobileService:
                     else "The office could not finish safely. Ask the office to check BUSY."
                 ),
             )
+            self._remove_report_directory(job_id)
 
     def report_file(self, user_id: str, job_id: str) -> tuple[Path, dict[str, Any]]:
+        self.cleanup_reports()
         job = self.store.job(job_id, user_id)
         if job is None or job["status"] != "ready":
             raise ValueError("This report is unavailable. Request a new statement.")
@@ -116,9 +151,11 @@ class MobileService:
 
     async def send(self, user: dict[str, Any], kind: str, file_id: str) -> dict[str, Any]:
         if kind == "report":
-            path, _ = self.report_file(user["id"], file_id)
+            path, report = self.report_file(user["id"], file_id)
+            filename = statement_filename(report["party_name"])
         else:
             path, _ = self.catalogue.file(file_id)
+            filename = path.name
         content = path.read_bytes()
         checksum = hashlib.sha256(content).hexdigest()
         artifact = f"{kind}:{file_id}:{checksum}"
@@ -142,7 +179,7 @@ class MobileService:
                         "to": user["phone"] + "@c.us",
                         "operation_id": delivery["operation_id"],
                     },
-                    files={"file": (path.name, content, "application/pdf")},
+                    files={"file": (filename, content, "application/pdf")},
                 )
                 response.raise_for_status()
                 receipt = parse_receipt(response.json(), delivery["operation_id"])

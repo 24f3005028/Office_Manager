@@ -19,6 +19,7 @@ from app.config import Settings
 from app.db import Database
 from app.domains.documents.scanner import DocumentScanner
 from app.domains.mobile.invoices import InvoiceCatalogue
+from app.domains.mobile.reports import statement_filename
 from app.domains.mobile.service import MobileService
 from app.domains.mobile.store import MobileStore
 from app.domains.settings.service import WorkspaceSettingsService
@@ -75,6 +76,7 @@ class Payload(BaseModel):
 
 class PairRequest(Payload):
     invite_code: str = Field(min_length=30, max_length=100)
+    phone: str | None = Field(default=None, pattern=r"^[1-9][0-9]{7,14}$")
 
 
 class ReportRequest(Payload):
@@ -92,6 +94,7 @@ def create_mobile_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.mobile = service or build_mobile(settings or Settings())
         app.state.mobile.store.recover()
+        app.state.mobile.cleanup_reports()
         try:
             yield
         finally:
@@ -155,7 +158,10 @@ def create_mobile_app(
 
     @app.post("/mobile/v1/pair")
     def pair(payload: PairRequest, request: Request) -> dict[str, str]:
-        result = instance(request).store.pair(payload.invite_code)
+        try:
+            result = instance(request).store.pair(payload.invite_code, payload.phone)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         if result is None:
             raise HTTPException(401, "Invite expired or already used. Ask for a new invite.")
         return result
@@ -190,6 +196,7 @@ def create_mobile_app(
 
     @app.get("/mobile/v1/reports")
     def history(request: Request, current: CurrentUser) -> list[dict[str, Any]]:
+        instance(request).cleanup_reports()
         return instance(request).store.jobs(current["id"])
 
     @app.get("/mobile/v1/reports/{job_id}")
@@ -204,7 +211,7 @@ def create_mobile_app(
         try:
             path, row = instance(request).report_file(current["id"], job_id)
             return FileResponse(
-                path, media_type="application/pdf", filename=f"Outstanding-{row['as_of']}.pdf"
+                path, media_type="application/pdf", filename=statement_filename(row["party_name"])
             )
         except (ValueError, OSError) as exc:
             raise HTTPException(
