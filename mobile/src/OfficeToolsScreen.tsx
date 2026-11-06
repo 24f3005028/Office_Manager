@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ComponentRef,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -9,6 +17,7 @@ import {
   View,
 } from "react-native";
 import { todayIndia } from "./api";
+import DateField from "./DateField";
 import {
   Button,
   displayDate,
@@ -17,6 +26,8 @@ import {
   Note,
   palette,
   styles,
+  Steps,
+  TaskTile,
 } from "./ui";
 
 type Api = <T>(path: string, body?: unknown) => Promise<T>;
@@ -72,8 +83,24 @@ const errorMessage = (value: unknown) =>
   value instanceof Error ? value.message : "The office request failed.";
 const newKey = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-export default function OfficeToolsScreen({ api }: { api: Api }) {
-  const [tool, setTool] = useState<"pouncha" | "send">("pouncha");
+export type OfficeToolsHandle = { back: () => boolean };
+export default forwardRef<
+  OfficeToolsHandle,
+  {
+    api: Api;
+    visible: boolean;
+    mode: "tools" | "history";
+    onShowActivity: () => void;
+    onShowTasks: () => void;
+  }
+>(function OfficeToolsScreen(
+  { api, visible, mode, onShowActivity, onShowTasks },
+  ref,
+) {
+  const [tool, setTool] = useState<"menu" | "pouncha" | "send">("menu");
+  const [sendStep, setSendStep] = useState(0);
+  const [showResult, setShowResult] = useState(false);
+  const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
@@ -111,6 +138,34 @@ export default function OfficeToolsScreen({ api }: { api: Api }) {
     action.result.status === "success" &&
     previewDates === datesKey;
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      back: () => {
+        if (busy) return true;
+        if (showResult) {
+          setShowResult(false);
+          return true;
+        }
+        if (mode === "history") return false;
+        if (tool === "send" && sendStep > 0) {
+          setSendStep((step) => step - 1);
+          return true;
+        }
+        if (tool !== "menu") {
+          setTool("menu");
+          setError("");
+          return true;
+        }
+        return false;
+      },
+    }),
+    [busy, showResult, mode, tool, sendStep],
+  );
+  useEffect(() => {
+    if (visible) scroll.current?.scrollTo({ y: 0, animated: false });
+  }, [visible, mode, tool, sendStep, showResult]);
+
   const run = useCallback(async (operation: () => Promise<void>) => {
     setBusy(true);
     setError("");
@@ -137,19 +192,27 @@ export default function OfficeToolsScreen({ api }: { api: Api }) {
     if (pending) setAction(await api<Action>(`/office/actions/${pending.id}`));
   }, [api]);
   useEffect(() => {
+    if (!visible) return;
     void run(refresh);
-  }, [run, refresh]);
+  }, [run, refresh, visible]);
   useEffect(() => {
-    if (tool !== "send") return;
+    if (!visible || mode !== "tools" || tool !== "send") return;
     void api<{ connected?: boolean; status?: string }>("/office/whatsapp")
       .then(setBridge)
       .catch((reason) => {
         setBridge({ connected: false, status: "Unavailable" });
         setError(errorMessage(reason));
       });
-  }, [api, tool]);
+  }, [api, tool, visible, mode]);
   useEffect(() => {
-    if (tool !== "send" || contact) return;
+    if (
+      !visible ||
+      mode !== "tools" ||
+      tool !== "send" ||
+      sendStep !== 1 ||
+      contact
+    )
+      return;
     let stopped = false;
     const timer = setTimeout(() => {
       void api<Contact[]>(
@@ -166,9 +229,9 @@ export default function OfficeToolsScreen({ api }: { api: Api }) {
       stopped = true;
       clearTimeout(timer);
     };
-  }, [api, contactQuery, contact, tool]);
+  }, [api, contactQuery, contact, tool, visible, mode, sendStep]);
   useEffect(() => {
-    if (!active || !action) return;
+    if (!visible || !active || !action) return;
     let stopped = false;
     const timer = setInterval(() => {
       void api<Action>(`/office/actions/${action.id}`)
@@ -188,7 +251,7 @@ export default function OfficeToolsScreen({ api }: { api: Api }) {
       stopped = true;
       clearInterval(timer);
     };
-  }, [action?.id, active, api]);
+  }, [action?.id, active, api, visible]);
 
   async function submit(
     kind: "pouncha" | "send",
@@ -202,6 +265,7 @@ export default function OfficeToolsScreen({ api }: { api: Api }) {
         request_key: pendingKey.current,
       });
       setAction(row);
+      setShowResult(true);
       setActions((rows) => [row, ...rows.filter((item) => item.id !== row.id)]);
       pendingKey.current = null;
     });
@@ -271,17 +335,13 @@ export default function OfficeToolsScreen({ api }: { api: Api }) {
     setter: (value: string) => void,
   ) {
     return (
-      <View style={styles.grow}>
-        <Text style={styles.label}>{label}</Text>
-        <TextInput
-          style={styles.input}
-          value={value}
-          editable={!busy && !active}
-          placeholder="YYYY-MM-DD"
-          accessibilityLabel={label}
-          onChangeText={setter}
-        />
-      </View>
+      <DateField
+        label={label}
+        value={value}
+        onChange={setter}
+        disabled={busy || active}
+        maximumDate={new Date()}
+      />
     );
   }
   function actionCard(row: Action) {
@@ -429,7 +489,7 @@ export default function OfficeToolsScreen({ api }: { api: Api }) {
       </View>
     );
   }
-  const visible =
+  const visibleDocuments =
     documents?.filter((row) =>
       (row.file_name + " " + (row.matched_voucher_no ?? ""))
         .toLowerCase()
@@ -437,47 +497,110 @@ export default function OfficeToolsScreen({ api }: { api: Api }) {
     ) ?? [];
   return (
     <ScrollView
+      ref={scroll}
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
       <Heading
-        eyebrow="OFFICE TOOLS"
-        title="Work from anywhere"
-        subtitle="Update the sheet or send saved bill PDFs."
+        eyebrow={mode === "history" ? "ACTIVITY" : "OFFICE"}
+        title={
+          mode === "history"
+            ? "Office requests"
+            : showResult
+              ? "Request details"
+              : tool === "menu"
+                ? "What do you need?"
+                : tool === "send"
+                  ? "Send bills"
+                  : "Update Pouncha"
+        }
+        subtitle={
+          mode === "history"
+            ? "Sheet updates and WhatsApp sends in one place."
+            : showResult
+              ? "Check progress and the result of your request."
+              : tool === "menu"
+                ? "Choose one task to get started."
+                : tool === "send"
+                  ? "Choose PDFs, choose a person, then review."
+                  : "Preview missing bills, then confirm the update."
+        }
       />
-      <View style={styles.smallActions}>
-        {(
-          [
-            ["pouncha", "Update sheet"],
-            ["send", "Send bills"],
-          ] as const
-        ).map(([key, label]) => (
-          <Pressable
-            accessibilityRole="tab"
-            accessibilityState={{ selected: tool === key }}
-            key={key}
-            onPress={() => setTool(key)}
-            style={[
-              styles.year,
-              styles.grow,
-              tool === key && styles.yearActive,
-            ]}
-          >
-            <Text
-              style={[styles.yearText, tool === key && styles.yearTextActive]}
-            >
-              {label}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
       {error && (
         <View style={styles.notice}>
           <Text style={[styles.error, styles.grow]}>{error}</Text>
         </View>
       )}
       {busy && <ActivityIndicator color={palette.blue} />}
-      {tool === "pouncha" ? (
+      {showResult && action ? (
+        <>
+          {actionCard(action)}
+          {mode === "tools" && previewReady && (
+            <Button
+              title={`Update sheet · ${action.result.new_count ?? 0} new bills`}
+              icon="arrow"
+              disabled={busy || active || !action.result.new_count}
+              onPress={() => sync(false)}
+            />
+          )}
+          <Button
+            title={
+              mode === "history"
+                ? "Back to requests"
+                : active
+                  ? "Back to task"
+                  : "Back to task options"
+            }
+            secondary
+            disabled={busy}
+            onPress={() => setShowResult(false)}
+          />
+        </>
+      ) : mode === "tools" && tool === "menu" ? (
+        <>
+          <TaskTile
+            title="Shared tasks"
+            subtitle="Office to-dos, due dates and reminders."
+            icon="check"
+            onPress={onShowTasks}
+          />
+          <TaskTile
+            title="Update Pouncha"
+            subtitle="Add missing bills to the Google Sheet."
+            icon="calendar"
+            onPress={() => setTool("pouncha")}
+          />
+          <TaskTile
+            title="Send bills"
+            subtitle="Send saved PDFs to a WhatsApp contact."
+            icon="whatsapp"
+            onPress={() => setTool("send")}
+          />
+          {active && action && (
+            <Button
+              title="View your running request"
+              icon="history"
+              secondary
+              onPress={() => setShowResult(true)}
+            />
+          )}
+          {!active && action && (
+            <Button
+              title="View last request result"
+              icon="history"
+              secondary
+              onPress={() => setShowResult(true)}
+            />
+          )}
+          <TaskTile
+            title="Office request history"
+            subtitle="Check progress, results and sent documents."
+            icon="history"
+            onPress={onShowActivity}
+          />
+          <Note>Nothing starts until you choose and confirm a task.</Note>
+        </>
+      ) : mode === "tools" && tool === "pouncha" ? (
         <>
           <View style={styles.card}>
             <View style={styles.row}>
@@ -536,8 +659,12 @@ export default function OfficeToolsScreen({ api }: { api: Api }) {
             />
           )}
         </>
-      ) : (
+      ) : mode === "tools" && tool === "send" ? (
         <>
+          <Steps
+            labels={["Documents", "Recipient", "Review"]}
+            current={sendStep}
+          />
           <Note icon="whatsapp">
             Office WhatsApp:{" "}
             {bridge?.connected ? "Connected" : (bridge?.status ?? "Checking…")}.
@@ -562,253 +689,337 @@ export default function OfficeToolsScreen({ api }: { api: Api }) {
               })
             }
           />
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>1. Choose documents</Text>
-            <View style={styles.row}>
-              {dateField("From", sendStart, (value) => {
-                setSendStart(value);
-                setDocuments(null);
-                setSelected([]);
-              })}
-              {dateField("Through", sendEnd, (value) => {
-                setSendEnd(value);
-                setDocuments(null);
-                setSelected([]);
-              })}
-            </View>
-            <View style={styles.yearList}>
-              {(
-                [
-                  ["bills", "Bills"],
-                  ["credit_notes", "Credit notes"],
-                  ["debit_notes", "Debit notes"],
-                  ["all", "All"],
-                ] as const
-              ).map(([key, label]) => (
-                <Pressable
-                  key={key}
-                  disabled={busy || active}
-                  onPress={() => {
-                    setCategory(key);
-                    setDocuments(null);
-                    setSelected([]);
-                  }}
-                  style={[styles.year, category === key && styles.yearActive]}
-                >
-                  <Text
-                    style={[
-                      styles.yearText,
-                      category === key && styles.yearTextActive,
-                    ]}
-                  >
-                    {label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-            <Button
-              title="Load saved PDFs"
-              icon="search"
-              secondary
-              disabled={busy || active}
-              onPress={loadDocuments}
-            />
-            {documents && (
-              <>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Filter by filename or bill number"
-                  value={filter}
-                  onChangeText={setFilter}
-                  accessibilityLabel="Filter documents"
-                />
-                <View style={styles.sectionHead}>
-                  <Text style={styles.muted}>
-                    {selected.length} selected · {documents.length} available
-                  </Text>
+          {sendStep === 0 && (
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>1. Choose documents</Text>
+              <View style={styles.row}>
+                {dateField("From", sendStart, (value) => {
+                  setSendStart(value);
+                  setDocuments(null);
+                  setSelected([]);
+                })}
+                {dateField("Through", sendEnd, (value) => {
+                  setSendEnd(value);
+                  setDocuments(null);
+                  setSelected([]);
+                })}
+              </View>
+              <View style={styles.yearList}>
+                {(
+                  [
+                    ["bills", "Bills"],
+                    ["credit_notes", "Credit notes"],
+                    ["debit_notes", "Debit notes"],
+                    ["all", "All"],
+                  ] as const
+                ).map(([key, label]) => (
                   <Pressable
+                    key={key}
                     disabled={busy || active}
-                    style={styles.textButton}
-                    onPress={() =>
-                      setSelected(
-                        selected.length
-                          ? []
-                          : documents.slice(0, 500).map((row) => row.file_id),
-                      )
-                    }
+                    onPress={() => {
+                      setCategory(key);
+                      setDocuments(null);
+                      setSelected([]);
+                    }}
+                    style={[styles.year, category === key && styles.yearActive]}
                   >
-                    <Text style={styles.link}>
-                      {selected.length ? "Clear" : "Select all"}
+                    <Text
+                      style={[
+                        styles.yearText,
+                        category === key && styles.yearTextActive,
+                      ]}
+                    >
+                      {label}
                     </Text>
                   </Pressable>
-                </View>
-                {visible.map((row) => (
-                  <Pressable
-                    key={row.file_id}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{
-                      checked: selected.includes(row.file_id),
-                    }}
-                    disabled={busy || active}
-                    style={styles.party}
-                    onPress={() =>
-                      setSelected((ids) =>
-                        ids.includes(row.file_id)
-                          ? ids.filter((id) => id !== row.file_id)
-                          : ids.length < 500
-                            ? [...ids, row.file_id]
-                            : ids,
-                      )
-                    }
-                  >
-                    <Icon
-                      name={selected.includes(row.file_id) ? "check" : "file"}
-                      color={
-                        selected.includes(row.file_id)
-                          ? palette.teal
-                          : palette.muted
+                ))}
+              </View>
+              <Button
+                title="Load saved PDFs"
+                icon="search"
+                secondary
+                disabled={busy || active}
+                onPress={loadDocuments}
+              />
+              {documents && (
+                <>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Filter by filename or bill number"
+                    value={filter}
+                    onChangeText={setFilter}
+                    accessibilityLabel="Filter documents"
+                  />
+                  <View style={styles.sectionHead}>
+                    <Text style={styles.muted}>
+                      {selected.length} selected · {documents.length} available
+                    </Text>
+                    <Pressable
+                      disabled={busy || active}
+                      style={styles.textButton}
+                      onPress={() =>
+                        setSelected((ids) =>
+                          visibleDocuments.every((row) =>
+                            ids.includes(row.file_id),
+                          )
+                            ? ids.filter(
+                                (id) =>
+                                  !visibleDocuments.some(
+                                    (row) => row.file_id === id,
+                                  ),
+                              )
+                            : [
+                                ...new Set([
+                                  ...ids,
+                                  ...visibleDocuments.map((row) => row.file_id),
+                                ]),
+                              ].slice(0, 500),
+                        )
                       }
-                    />
-                    <View style={styles.grow}>
-                      <Text style={styles.historyTitle}>{row.file_name}</Text>
-                      <Text style={styles.historyMeta}>
-                        {displayDate(row.effective_date)} ·{" "}
-                        {row.category.replace("_", " ")}
-                        {row.date_source === "file_fallback"
-                          ? " · File date: verify"
-                          : ""}
+                    >
+                      <Text style={styles.link}>
+                        {visibleDocuments.length &&
+                        visibleDocuments.every((row) =>
+                          selected.includes(row.file_id),
+                        )
+                          ? "Clear shown"
+                          : "Select shown"}
                       </Text>
-                    </View>
-                  </Pressable>
-                ))}
-                {!visible.length && (
+                    </Pressable>
+                  </View>
+                  {visibleDocuments.map((row) => (
+                    <Pressable
+                      key={row.file_id}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{
+                        checked: selected.includes(row.file_id),
+                      }}
+                      disabled={busy || active}
+                      style={styles.party}
+                      onPress={() =>
+                        setSelected((ids) =>
+                          ids.includes(row.file_id)
+                            ? ids.filter((id) => id !== row.file_id)
+                            : ids.length < 500
+                              ? [...ids, row.file_id]
+                              : ids,
+                        )
+                      }
+                    >
+                      <Icon
+                        name={selected.includes(row.file_id) ? "check" : "file"}
+                        color={
+                          selected.includes(row.file_id)
+                            ? palette.teal
+                            : palette.muted
+                        }
+                      />
+                      <View style={styles.grow}>
+                        <Text style={styles.historyTitle}>{row.file_name}</Text>
+                        <Text style={styles.historyMeta}>
+                          {displayDate(row.effective_date)} ·{" "}
+                          {row.category.replace("_", " ")}
+                          {row.date_source === "file_fallback"
+                            ? " · File date: verify"
+                            : ""}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                  {!visibleDocuments.length && (
+                    <Text style={styles.muted}>
+                      No documents found for these filters.
+                    </Text>
+                  )}
+                </>
+              )}
+              <Button
+                title={`Continue · ${selected.length} selected`}
+                icon="arrow"
+                disabled={busy || active || !selected.length}
+                onPress={() => setSendStep(1)}
+              />
+            </View>
+          )}
+          {sendStep === 1 && (
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>2. Choose the recipient</Text>
+              {contact ? (
+                <>
+                  <Text style={styles.cardTitle}>{contact.name}</Text>
                   <Text style={styles.muted}>
-                    No documents found for these filters.
+                    {contact.phone_display ??
+                      contact.number ??
+                      "Saved WhatsApp contact"}
                   </Text>
-                )}
-              </>
-            )}
-          </View>
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>2. Choose the recipient</Text>
-            {contact ? (
-              <>
-                <Text style={styles.cardTitle}>{contact.name}</Text>
-                <Text style={styles.muted}>
-                  {contact.phone_display ??
-                    contact.number ??
-                    "Saved WhatsApp contact"}
-                </Text>
-                <Button
-                  title="Choose another contact"
-                  secondary
-                  disabled={busy || active}
-                  onPress={() => setContact(null)}
-                />
-              </>
-            ) : (
-              <>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Search WhatsApp name or number"
-                  accessibilityLabel="Search WhatsApp contact"
-                  value={contactQuery}
-                  onChangeText={setContactQuery}
-                  editable={!busy && !active}
-                />
-                {contacts.slice(0, 8).map((row) => (
-                  <Pressable
-                    key={row.id}
+                  <Button
+                    title="Choose another contact"
+                    secondary
                     disabled={busy || active}
-                    onPress={() => setContact(row)}
-                    style={styles.party}
-                  >
-                    <View style={styles.grow}>
-                      <Text style={styles.historyTitle}>{row.name}</Text>
-                      <Text style={styles.historyMeta}>
-                        {row.phone_display ?? row.number ?? "Saved contact"}
-                      </Text>
-                    </View>
-                    <Icon name="chevron" size={17} />
-                  </Pressable>
+                    onPress={() => setContact(null)}
+                  />
+                </>
+              ) : (
+                <>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Search WhatsApp name or number"
+                    accessibilityLabel="Search WhatsApp contact"
+                    value={contactQuery}
+                    onChangeText={setContactQuery}
+                    editable={!busy && !active}
+                  />
+                  {contacts.slice(0, 8).map((row) => (
+                    <Pressable
+                      key={row.id}
+                      disabled={busy || active}
+                      onPress={() => setContact(row)}
+                      style={styles.party}
+                    >
+                      <View style={styles.grow}>
+                        <Text style={styles.historyTitle}>{row.name}</Text>
+                        <Text style={styles.historyMeta}>
+                          {row.phone_display ?? row.number ?? "Saved contact"}
+                        </Text>
+                      </View>
+                      <Icon name="chevron" size={17} />
+                    </Pressable>
+                  ))}
+                </>
+              )}
+              {!contact && !contacts.length && (
+                <Text style={styles.muted}>
+                  Search for a saved WhatsApp contact by name or number.
+                </Text>
+              )}
+              <Button
+                title="Continue to review"
+                icon="arrow"
+                disabled={busy || active || !contact}
+                onPress={() => setSendStep(2)}
+              />
+            </View>
+          )}
+          {sendStep === 2 && (
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>3. Review & send</Text>
+              <Text style={styles.cardTitle}>{contact?.name}</Text>
+              <Text style={styles.muted}>
+                {contact?.phone_display ?? contact?.number}
+              </Text>
+              <Text style={styles.noteText}>
+                {displayDate(sendStart)} – {displayDate(sendEnd)} ·{" "}
+                {category.replaceAll("_", " ")}
+              </Text>
+              {documents
+                ?.filter((row) => selected.includes(row.file_id))
+                .map((row) => (
+                  <Text key={row.file_id} style={styles.historyTitle}>
+                    {row.file_name}
+                    {row.date_source === "file_fallback"
+                      ? " · File date: verify"
+                      : ""}
+                  </Text>
                 ))}
-              </>
-            )}
+              <Text style={styles.label}>Opening message (optional)</Text>
+              <TextInput
+                style={styles.input}
+                multiline
+                value={message}
+                maxLength={4096}
+                onChangeText={setMessage}
+                editable={!busy && !active}
+                accessibilityLabel="Opening WhatsApp message"
+              />
+              <Text style={styles.muted}>
+                {selected.length} selected PDFs ·{" "}
+                {contact?.name ?? "No recipient chosen"}
+              </Text>
+              <Button
+                title="Review & send"
+                icon="whatsapp"
+                green
+                disabled={
+                  busy ||
+                  active ||
+                  !selected.length ||
+                  !contact ||
+                  !bridge?.connected
+                }
+                onPress={confirmSend}
+              />
+            </View>
+          )}
+        </>
+      ) : null}
+      {!showResult && mode === "tools" && tool !== "menu" && (
+        <Button
+          title="Back"
+          secondary
+          icon="back"
+          disabled={busy}
+          onPress={() => {
+            if (tool === "send" && sendStep > 0)
+              setSendStep((step) => step - 1);
+            else setTool("menu");
+          }}
+        />
+      )}
+      {!showResult && mode === "history" && (
+        <>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionTitle}>Your office requests</Text>
+            <Pressable
+              disabled={busy}
+              style={styles.textButton}
+              onPress={() => void run(refresh)}
+            >
+              <Text style={styles.link}>Refresh</Text>
+            </Pressable>
           </View>
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>3. Review & send</Text>
-            <Text style={styles.label}>Opening message (optional)</Text>
-            <TextInput
-              style={styles.input}
-              multiline
-              value={message}
-              maxLength={4096}
-              onChangeText={setMessage}
-              editable={!busy && !active}
-              accessibilityLabel="Opening WhatsApp message"
-            />
-            <Text style={styles.muted}>
-              {selected.length} selected PDFs ·{" "}
-              {contact?.name ?? "No recipient chosen"}
-            </Text>
-            <Button
-              title="Review & send"
-              icon="whatsapp"
-              green
-              disabled={
-                busy ||
-                active ||
-                !selected.length ||
-                !contact ||
-                !bridge?.connected
+          {actions.map((row) => (
+            <Pressable
+              key={row.id}
+              disabled={busy}
+              style={styles.historyItem}
+              onPress={() =>
+                void run(async () => {
+                  setAction(await api<Action>(`/office/actions/${row.id}`));
+                  setShowResult(true);
+                })
               }
-              onPress={confirmSend}
-            />
-          </View>
+            >
+              <View style={styles.grow}>
+                <Text style={styles.historyTitle}>
+                  {row.kind === "send"
+                    ? "WhatsApp documents"
+                    : row.result.preview_only
+                      ? "Pouncha preview"
+                      : "Pouncha update"}
+                </Text>
+                <Text style={styles.historyMeta}>
+                  {new Date(row.created_at).toLocaleString("en-IN")} ·{" "}
+                  {row.result.status ?? row.state}
+                </Text>
+              </View>
+              <Icon name="chevron" size={18} />
+            </Pressable>
+          ))}
+          {!actions.length && (
+            <View style={styles.empty}>
+              <Icon name="history" size={32} />
+              <Text style={styles.emptyTitle}>No office requests yet</Text>
+              <Text style={styles.emptyCopy}>
+                Sheet previews, updates and WhatsApp sends will appear here.
+              </Text>
+            </View>
+          )}
+          <Note>
+            Actions run only when you confirm them. If a result is uncertain,
+            check the office dashboard before retrying.
+          </Note>
         </>
       )}
-      {action && actionCard(action)}
-      <View style={styles.sectionHead}>
-        <Text style={styles.sectionTitle}>Your office requests</Text>
-        <Pressable
-          disabled={busy}
-          style={styles.textButton}
-          onPress={() => void run(refresh)}
-        >
-          <Text style={styles.link}>Refresh</Text>
-        </Pressable>
-      </View>
-      {actions.map((row) => (
-        <Pressable
-          key={row.id}
-          disabled={busy}
-          style={styles.historyItem}
-          onPress={() =>
-            void run(async () =>
-              setAction(await api<Action>(`/office/actions/${row.id}`)),
-            )
-          }
-        >
-          <View style={styles.grow}>
-            <Text style={styles.historyTitle}>
-              {row.kind === "send"
-                ? "WhatsApp documents"
-                : row.result.preview_only
-                  ? "Pouncha preview"
-                  : "Pouncha update"}
-            </Text>
-            <Text style={styles.historyMeta}>
-              {new Date(row.created_at).toLocaleString("en-IN")} ·{" "}
-              {row.result.status ?? row.state}
-            </Text>
-          </View>
-          <Icon name="chevron" size={18} />
-        </Pressable>
-      ))}
-      <Note>
-        Actions run only when you confirm them. If a result is uncertain, check
-        the office dashboard before retrying.
-      </Note>
     </ScrollView>
   );
-}
+});

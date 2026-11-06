@@ -132,6 +132,87 @@ export function Note({
     </View>
   );
 }
+export function TaskTile({
+  title,
+  subtitle,
+  icon,
+  onPress,
+  disabled = false,
+}: {
+  title: string;
+  subtitle: string;
+  icon: IconName;
+  onPress: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.billTile,
+        disabled && styles.disabled,
+        pressed && styles.pressed,
+      ]}
+    >
+      <View style={styles.tileIcon}>
+        <Icon name={icon} size={23} />
+      </View>
+      <View style={styles.grow}>
+        <Text style={styles.tileTitle}>{title}</Text>
+        <Text style={styles.tileCopy}>{subtitle}</Text>
+      </View>
+      <Icon name="chevron" size={17} color={palette.muted} />
+    </Pressable>
+  );
+}
+export function Steps({
+  labels,
+  current,
+}: {
+  labels: readonly string[];
+  current: number;
+}) {
+  return (
+    <View
+      style={styles.steps}
+      accessibilityLabel={`Step ${current + 1} of ${labels.length}: ${labels[current]}`}
+    >
+      {labels.map((label, index) => (
+        <View key={label} style={styles.step}>
+          <View
+            style={[
+              styles.stepCircle,
+              index <= current && styles.stepCircleActive,
+            ]}
+          >
+            {index < current ? (
+              <Icon name="check" size={15} color="white" />
+            ) : (
+              <Text
+                style={[
+                  styles.stepNumber,
+                  index === current && styles.stepNumberActive,
+                ]}
+              >
+                {index + 1}
+              </Text>
+            )}
+          </View>
+          <Text
+            style={[
+              styles.stepLabel,
+              index === current && styles.navLabelActive,
+            ]}
+          >
+            {label}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
 export function displayDate(value: string): string {
   const parsed = new Date(value + "T00:00:00Z");
   return Number.isNaN(parsed.getTime())
@@ -200,8 +281,8 @@ export const styles = StyleSheet.create({
     color: palette.blue,
   },
   title: {
-    fontSize: 32,
-    lineHeight: 39,
+    fontSize: 28,
+    lineHeight: 35,
     letterSpacing: -0.9,
     fontWeight: "800",
     color: palette.ink,
@@ -328,6 +409,7 @@ export const styles = StyleSheet.create({
     width: 50,
     height: 29,
     borderRadius: 15,
+    overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -349,7 +431,8 @@ export const styles = StyleSheet.create({
   heroIcon: {
     width: 44,
     height: 44,
-    borderRadius: 14,
+    borderRadius: 22,
+    overflow: "hidden",
     backgroundColor: "#264766",
     alignItems: "center",
     justifyContent: "center",
@@ -390,12 +473,13 @@ export const styles = StyleSheet.create({
     borderRadius: 19,
     borderWidth: 1,
     borderColor: palette.border,
-    minHeight: 112,
+    minHeight: 92,
   },
   tileIcon: {
     width: 48,
     height: 48,
-    borderRadius: 15,
+    borderRadius: 24,
+    overflow: "hidden",
     backgroundColor: palette.light,
     alignItems: "center",
     justifyContent: "center",
@@ -465,7 +549,8 @@ export const styles = StyleSheet.create({
   partyMark: {
     width: 42,
     height: 42,
-    borderRadius: 13,
+    borderRadius: 21,
+    overflow: "hidden",
     backgroundColor: palette.light,
     alignItems: "center",
     justifyContent: "center",
@@ -485,7 +570,7 @@ export const styles = StyleSheet.create({
     paddingVertical: 13,
     borderWidth: 1,
     borderColor: palette.border,
-    borderRadius: 11,
+    borderRadius: 24,
     backgroundColor: "white",
     minHeight: 48,
   },
@@ -572,4 +657,43 @@ export const styles = StyleSheet.create({
     minHeight: 50,
   },
   dangerText: { color: "#ad4941", fontSize: 14, fontWeight: "700" },
+  backRow: {
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  backButton: {
+    minHeight: 44,
+    minWidth: 44,
+    borderRadius: 22,
+    overflow: "hidden",
+    backgroundColor: "white",
+    flexDirection: "row",
+    gap: 6,
+    paddingHorizontal: 12,
+    alignItems: "center",
+  },
+  backLabel: { fontSize: 13, color: palette.navy, fontWeight: "700" },
+  steps: { flexDirection: "row", gap: 8, paddingVertical: 4 },
+  step: { flex: 1, alignItems: "center", gap: 7 },
+  stepCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    overflow: "hidden",
+    backgroundColor: palette.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepCircleActive: { backgroundColor: palette.navy },
+  stepNumber: { color: palette.muted, fontWeight: "700", fontSize: 12 },
+  stepNumberActive: { color: "white" },
+  stepLabel: {
+    color: palette.muted,
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
+  },
 });

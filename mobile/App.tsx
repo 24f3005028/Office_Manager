@@ -3,8 +3,10 @@ import {
   ActivityIndicator,
   Alert,
   AppState,
+  BackHandler,
   FlatList,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Pressable,
   ScrollView,
@@ -14,8 +16,16 @@ import {
   View,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import OfficeToolsScreen from "./src/OfficeToolsScreen";
+import OfficeToolsScreen, { OfficeToolsHandle } from "./src/OfficeToolsScreen";
 import InviteManager from "./src/InviteManager";
+import TasksScreen, { TasksHandle } from "./src/TasksScreen";
+import DateField from "./src/DateField";
+import {
+  SESSION_KEY,
+  stopTaskReminders,
+  syncTaskReminders,
+} from "./src/taskReminders";
+import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
@@ -40,9 +50,10 @@ import {
   Note,
   palette,
   styles,
+  TaskTile,
+  Steps,
 } from "./src/ui";
 
-const SESSION_KEY = "office-session-v1";
 const statusText: Record<string, string> = {
   queued: "Waiting for the office…",
   warning: "Checking whether someone is using BUSY…",
@@ -52,7 +63,13 @@ const statusText: Record<string, string> = {
   failed: "Report could not be created",
 };
 type Screen =
-  "home" | "outstanding" | "invoices" | "history" | "account" | "tools";
+  | "home"
+  | "outstanding"
+  | "invoices"
+  | "history"
+  | "account"
+  | "tools"
+  | "tasks";
 const errorText = (error: unknown) =>
   error instanceof Error
     ? error.message
@@ -68,6 +85,7 @@ function OfficeApp() {
   const [screen, setScreen] = useState<Screen>("home"),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  const selectedTab = screen === "tasks" ? "tools" : screen;
   const [query, setQuery] = useState(""),
     [parties, setParties] = useState<Party[]>([]),
     [searching, setSearching] = useState(false),
@@ -80,6 +98,14 @@ function OfficeApp() {
     [bill, setBill] = useState(""),
     [invoices, setInvoices] = useState<Invoice[] | null>(null);
   const [history, setHistory] = useState<Report[]>([]);
+  const [activityTab, setActivityTab] = useState<"statements" | "office">(
+    "statements",
+  );
+  const officeTools = useRef<OfficeToolsHandle>(null);
+  const taskScreen = useRef<TasksHandle>(null);
+  const tasksFrom = useRef<Screen>("home");
+  const accountFrom = useRef<Screen>("home");
+  const statementFrom = useRef<Screen>("home");
   const mounted = useRef(true),
     searchRevision = useRef(0);
   const activeReport = Boolean(
@@ -105,6 +131,33 @@ function OfficeApp() {
       mounted.current = false;
     };
   }, []);
+  useEffect(() => {
+    if (!session) return;
+    void syncTaskReminders().catch(() => {});
+    const foreground = AppState.addEventListener("change", (state) => {
+      if (state === "active") void syncTaskReminders().catch(() => {});
+    });
+    if (Platform.OS === "web") return () => foreground.remove();
+    const showTasks = () => {
+      tasksFrom.current = "home";
+      setScreen("tasks");
+      void Notifications.clearLastNotificationResponseAsync().catch(() => {});
+    };
+    const response = Notifications.addNotificationResponseReceivedListener(
+      (event) => {
+        if (event.notification.request.content.data?.taskId) showTasks();
+      },
+    );
+    void Notifications.getLastNotificationResponseAsync()
+      .then((event) => {
+        if (event?.notification.request.content.data?.taskId) showTasks();
+      })
+      .catch(() => {});
+    return () => {
+      foreground.remove();
+      response.remove();
+    };
+  }, [session]);
   useEffect(() => {
     if (!session) return;
     void api<Person>("/me")
@@ -201,13 +254,13 @@ function OfficeApp() {
     });
   }
   async function open(next: Screen) {
+    Keyboard.dismiss();
     setScreen(next);
     setError("");
     if (next === "history")
       await action(async () => setHistory(await api<Report[]>("/reports")));
-    if (next === "invoices")
+    if (next === "invoices" && !years.length)
       await action(async () => {
-        setInvoices(null);
         const data = await api<{ years: string[]; default: string | null }>(
           "/financial-years",
         );
@@ -215,6 +268,49 @@ function OfficeApp() {
         setYear(data.default ?? "26-27");
       });
   }
+  function back() {
+    if (busy) return true;
+    Keyboard.dismiss();
+    setError("");
+    if (screen === "tasks") {
+      if (!taskScreen.current?.back()) setScreen(tasksFrom.current);
+      return true;
+    }
+    if (
+      (screen === "tools" ||
+        (screen === "history" && activityTab === "office")) &&
+      officeTools.current?.back()
+    )
+      return true;
+    if (screen === "account") {
+      setScreen(accountFrom.current);
+      return true;
+    }
+    if (screen === "outstanding") {
+      if (report) {
+        if (!activeReport) {
+          setReport(null);
+          setParty(null);
+        }
+        setScreen(statementFrom.current);
+        return true;
+      }
+      if (party) {
+        setParty(null);
+        return true;
+      }
+    }
+    if (screen !== "home") {
+      setScreen("home");
+      return true;
+    }
+    return false;
+  }
+  useEffect(() => {
+    if (!session) return;
+    const listener = BackHandler.addEventListener("hardwareBackPress", back);
+    return () => listener.remove();
+  }, [screen, session, busy, report, party, activityTab]);
   async function generate() {
     if (!party) return;
     await action(async () => {
@@ -228,13 +324,14 @@ function OfficeApp() {
           "Choose a date from 2025-01-16 through today, using YYYY-MM-DD.",
         );
       }
-      setReport(
-        await api<Report>("/reports", {
-          party_id: party.id,
-          as_of: asOf,
-          request_key: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        }),
-      );
+      const row = await api<Report>("/reports", {
+        party_id: party.id,
+        as_of: asOf,
+        request_key: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      });
+      statementFrom.current = "home";
+      setReport(row);
+      setHistory((rows) => [row, ...rows.filter((item) => item.id !== row.id)]);
     });
   }
   async function findBill() {
@@ -452,6 +549,7 @@ function OfficeApp() {
         accessibilityLabel={`View statement for ${row.party_name}`}
         disabled={busy}
         onPress={() => {
+          statementFrom.current = screen;
           setReport(row);
           setParty(null);
           setScreen("outstanding");
@@ -508,9 +606,13 @@ function OfficeApp() {
                   : "Your account and connection"
               }
               disabled={busy}
-              onPress={() =>
-                setScreen(screen === "account" ? "home" : "account")
-              }
+              onPress={() => {
+                if (screen === "account") back();
+                else {
+                  accountFrom.current = screen;
+                  void open("account");
+                }
+              }}
               style={styles.avatar}
             >
               {screen === "account" ? (
@@ -655,41 +757,70 @@ function OfficeApp() {
           </ScrollView>
         ) : (
           <View style={styles.screen}>
+            {screen !== "home" && (
+              <View style={styles.backRow}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Go back"
+                  disabled={busy}
+                  style={styles.backButton}
+                  onPress={back}
+                >
+                  <Icon name="back" size={17} />
+                  <Text style={styles.backLabel}>Back</Text>
+                </Pressable>
+              </View>
+            )}
+            {screen === "history" && (
+              <View
+                style={[
+                  styles.smallActions,
+                  { paddingHorizontal: 22, paddingTop: 12 },
+                ]}
+              >
+                {(
+                  [
+                    ["statements", "Statements"],
+                    ["office", "Office requests"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <Pressable
+                    key={key}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: activityTab === key }}
+                    onPress={() => setActivityTab(key)}
+                    style={[
+                      styles.year,
+                      styles.grow,
+                      activityTab === key && styles.yearActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.yearText,
+                        activityTab === key && styles.yearTextActive,
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
             {screen === "home" ? (
               <ScrollView contentContainerStyle={styles.content}>
                 <Heading
                   eyebrow="YOUR WORKSPACE"
                   title={`Hello${person ? ", " + person.name.split(" ")[0] : ""}.`}
-                  subtitle="What can we help you find today?"
+                  subtitle="Choose what you want to do."
                 />
-                <View style={styles.hero}>
-                  <View style={styles.heroTop}>
-                    <View style={styles.heroIcon}>
-                      <Icon name="statement" color="white" size={25} />
-                    </View>
-                    <Text style={styles.heroTag}>FROM THE OFFICE</Text>
-                  </View>
-                  <View style={{ gap: 8 }}>
-                    <Text style={styles.heroTitle}>
-                      {"Outstanding\nmade simple."}
-                    </Text>
-                    <Text style={styles.heroCopy}>
-                      Choose a party. Get their latest pending-bill statement.
-                    </Text>
-                  </View>
-                  <Pressable
-                    accessibilityRole="button"
-                    disabled={busy}
-                    onPress={() => void open("outstanding")}
-                    style={({ pressed }) => [
-                      styles.heroButton,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={styles.heroButtonText}>Get a statement</Text>
-                    <Icon name="arrow" size={20} />
-                  </Pressable>
-                </View>
+                <TaskTile
+                  title="Outstanding statement"
+                  subtitle="Choose a party and get their pending bills."
+                  icon="statement"
+                  disabled={busy}
+                  onPress={() => void open("outstanding")}
+                />
                 <Pressable
                   accessibilityRole="button"
                   disabled={busy}
@@ -710,12 +841,22 @@ function OfficeApp() {
                   </View>
                   <Icon name="chevron" size={18} />
                 </Pressable>
-                <Button
-                  title="Update sheet & send bills"
-                  icon="share"
-                  secondary
+                <TaskTile
+                  title="Office tools"
+                  subtitle="Update Pouncha or send saved bill PDFs."
+                  icon="calendar"
                   disabled={busy}
                   onPress={() => void open("tools")}
+                />
+                <TaskTile
+                  title="Shared tasks"
+                  subtitle="Office to-dos, due dates and reminders."
+                  icon="check"
+                  disabled={busy}
+                  onPress={() => {
+                    tasksFrom.current = "home";
+                    void open("tasks");
+                  }}
                 />
                 {person?.can_invite_users && (
                   <Button
@@ -723,7 +864,10 @@ function OfficeApp() {
                     secondary
                     icon="share"
                     disabled={busy}
-                    onPress={() => setScreen("account")}
+                    onPress={() => {
+                      accountFrom.current = "home";
+                      void open("account");
+                    }}
                   />
                 )}
                 <View style={styles.sectionHead}>
@@ -768,6 +912,18 @@ function OfficeApp() {
                         report
                           ? "Your report, straight from the office."
                           : "Search by name to get a pending-bill statement."
+                      }
+                    />
+                    <Steps
+                      labels={["Party", "Create", "PDF"]}
+                      current={
+                        report
+                          ? report.status === "ready"
+                            ? 2
+                            : 1
+                          : party
+                            ? 1
+                            : 0
                       }
                     />
                     {!report && !party && (
@@ -827,17 +983,13 @@ function OfficeApp() {
                           </Pressable>
                         </View>
                         {advanced && (
-                          <View>
-                            <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
-                            <TextInput
-                              style={styles.input}
-                              value={asOf}
-                              editable={!busy}
-                              onChangeText={setAsOf}
-                              placeholder="2026-11-05"
-                              accessibilityLabel="Statement status date"
-                            />
-                          </View>
+                          <DateField
+                            label="Statement status date"
+                            value={asOf}
+                            onChange={setAsOf}
+                            disabled={busy}
+                            maximumDate={new Date()}
+                          />
                         )}
                         <Button
                           title="Create statement"
@@ -1059,7 +1211,7 @@ function OfficeApp() {
                   </View>
                 ))}
               </ScrollView>
-            ) : screen === "history" ? (
+            ) : screen === "history" && activityTab === "statements" ? (
               <ScrollView contentContainerStyle={styles.content}>
                 <Heading
                   eyebrow="ACTIVITY"
@@ -1099,9 +1251,9 @@ function OfficeApp() {
                   whenever you need updated figures.
                 </Note>
               </ScrollView>
-            ) : screen === "tools" ? (
-              <OfficeToolsScreen api={api} />
-            ) : (
+            ) : screen === "tools" ||
+              screen === "history" ||
+              screen === "tasks" ? null : (
               <ScrollView contentContainerStyle={styles.content}>
                 <Heading
                   eyebrow="YOUR ACCOUNT"
@@ -1178,6 +1330,7 @@ function OfficeApp() {
                               try {
                                 await api("/logout", {});
                               } finally {
+                                await stopTaskReminders().catch(() => {});
                                 await SecureStore.deleteItemAsync(SESSION_KEY);
                                 setSession(null);
                                 setPerson(null);
@@ -1196,10 +1349,53 @@ function OfficeApp() {
                   <Text style={styles.dangerText}>Disconnect this phone</Text>
                 </Pressable>
                 <Text style={[styles.noteText, { textAlign: "center" }]}>
-                  H.S. Traders Office · Version 1.2.2
+                  H.S. Traders Office · Version 1.3.0
                 </Text>
               </ScrollView>
             )}
+            <View
+              style={[
+                styles.screen,
+                {
+                  display:
+                    screen === "tools" ||
+                    (screen === "history" && activityTab === "office")
+                      ? "flex"
+                      : "none",
+                },
+              ]}
+            >
+              <OfficeToolsScreen
+                ref={officeTools}
+                api={api}
+                visible={
+                  screen === "tools" ||
+                  (screen === "history" && activityTab === "office")
+                }
+                mode={screen === "history" ? "history" : "tools"}
+                onShowActivity={() => {
+                  setActivityTab("office");
+                  void open("history");
+                }}
+                onShowTasks={() => {
+                  tasksFrom.current = "tools";
+                  void open("tasks");
+                }}
+              />
+            </View>
+            <View
+              style={[
+                styles.screen,
+                { display: screen === "tasks" ? "flex" : "none" },
+              ]}
+            >
+              <TasksScreen
+                ref={taskScreen}
+                api={api}
+                person={person}
+                visible={screen === "tasks"}
+              />
+            </View>
           </View>
         )}
         {session && (
@@ -1217,7 +1413,7 @@ function OfficeApp() {
                 key={key}
                 accessibilityRole="tab"
                 accessibilityState={{
-                  selected: screen === key,
+                  selected: selectedTab === key,
                   disabled: busy,
                 }}
                 disabled={busy}
@@ -1228,18 +1424,21 @@ function OfficeApp() {
                 ]}
               >
                 <View
-                  style={[styles.navIcon, screen === key && styles.navActive]}
+                  style={[
+                    styles.navIcon,
+                    selectedTab === key && styles.navActive,
+                  ]}
                 >
                   <Icon
                     name={icon}
                     size={21}
-                    color={screen === key ? palette.navy : palette.muted}
+                    color={selectedTab === key ? palette.navy : palette.muted}
                   />
                 </View>
                 <Text
                   style={[
                     styles.navLabel,
-                    screen === key && styles.navLabelActive,
+                    selectedTab === key && styles.navLabelActive,
                   ]}
                 >
                   {title}

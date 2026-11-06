@@ -69,7 +69,7 @@ export async function request<T>(
     const text = await response.text();
     const incomplete =
       body !== undefined
-        ? "The office did not confirm this request. Check its result in Activity or Office requests before trying again."
+        ? "The office did not confirm this request. Check its result in Activity, Office requests or Shared tasks before trying again."
         : response.status === 401
           ? "Access expired or was revoked. Ask the office for a new invite."
           : response.status >= 500
@@ -106,7 +106,7 @@ export async function request<T>(
       throw new Error(
         body === undefined
           ? "Cannot reach the office. Check Tailscale and your connection, then refresh this screen."
-          : "Connection lost before confirmation. Check the request result in Activity or Office requests before trying again.",
+          : "Connection lost before confirmation. Check the result in Activity, Office requests or Shared tasks before trying again.",
       );
     }
     throw error;
