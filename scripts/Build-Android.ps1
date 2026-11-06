@@ -63,6 +63,15 @@ try {
         $gradle = $gradle.Replace('    signingConfigs {', $releaseConfig)
     }
     $gradle = $gradle.Replace('signingConfig signingConfigs.debug', 'signingConfig signingConfigs.officeRelease')
+    # Keep reflective WorkManager/Room constructors after both prebuild and SkipPrebuild.
+    $keepRules = Join-Path $mobile 'android-keep-rules.pro'
+    if (!(Test-Path -LiteralPath $keepRules)) { throw 'Android release keep rules are missing.' }
+    if (!$gradle.Contains('../../android-keep-rules.pro')) {
+        if ([regex]::Matches($gradle, '"proguard-rules\.pro"').Count -ne 1) {
+            throw 'Android ProGuard configuration changed; release keep rules were not applied.'
+        }
+        $gradle = $gradle.Replace('"proguard-rules.pro"', '"proguard-rules.pro", "../../android-keep-rules.pro"')
+    }
     if (!$gradle.Contains('CMAKE_OBJECT_PATH_MAX')) {
         $gradle = $gradle.Replace('    defaultConfig {', "    defaultConfig {`n        externalNativeBuild { cmake { arguments '-DCMAKE_OBJECT_PATH_MAX=240' } }")
     }

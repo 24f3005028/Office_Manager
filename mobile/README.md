@@ -55,6 +55,13 @@ The ignored `.g/` directory holds the Gradle cache at a short path for Windows n
 
 Validation commands: `bun run typecheck`, `bun run export`; backend tests in `backend/tests/test_mobile_api.py` and `test_mobile_foundations.py`.
 
+Release builds also need a cold-start check on an Android device: JavaScript tests
+and web previews cannot detect AndroidX Startup failures. The tracked
+`android-keep-rules.pro` preserves reflective Room database and WorkManager input
+merger constructors under R8 full mode. `Build-Android.ps1` attaches these rules
+after either prebuild or `-SkipPrebuild`, and fails if the generated ProGuard
+configuration no longer matches. Keep release optimization enabled.
+
 ## Current verification limits
 
 If the phone reports that the office is unavailable, run `Start-Office.cmd` on the office computer and use **Office → Send bills → Check office connection** (or reopen the Office tab in older versions). The private URL can return 502 while the local services are stopped. Starting Tailscale alone does not start the dashboard services. Version 1.2.2 handles empty/truncated responses without exposing JSON parsing errors and never automatically repeats unconfirmed sends or updates. Run `bun run test` for the client response-handling regression tests.
