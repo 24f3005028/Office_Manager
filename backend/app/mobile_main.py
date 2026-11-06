@@ -23,6 +23,7 @@ from app.domains.mobile.office_routes import install_office_routes
 from app.domains.mobile.reports import statement_filename
 from app.domains.mobile.service import MobileService
 from app.domains.mobile.store import MobileStore
+from app.domains.mobile.task_routes import install_task_routes
 from app.domains.settings.service import WorkspaceSettingsService
 
 
@@ -291,6 +292,7 @@ def create_mobile_app(
             raise HTTPException(404, str(exc)) from exc
 
     install_office_routes(app, user)
+    install_task_routes(app, user)
     return app
 
 

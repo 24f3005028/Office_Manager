@@ -26,6 +26,7 @@ from app.domains.mobile.reports import (
     verify_report,
 )
 from app.domains.mobile.store import MobileStore, now
+from app.domains.mobile.tasks import TaskStore
 from app.domains.pouncha_sync.parser import SyncError
 from app.integrations.whatsapp.client import classify_send_error, parse_receipt
 
@@ -43,6 +44,7 @@ class MobileService:
         self.settings, self.store, self.catalogue = settings, store, catalogue
         self.warning = warning
         self.office = OfficeTools(store)
+        self.tasks = TaskStore(store.database)
         self.exporter = exporter or OutstandingExporter(settings)
         self.directory = settings.database_path.expanduser().resolve().parent / "mobile-reports"
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mobile-reports")
