@@ -224,7 +224,10 @@ class HttpWhatsAppBridge:
         response.raise_for_status()
 
     async def contacts(self) -> Any:
-        response = await self._client.get("/contacts")
+        # Initial saved-contact/LID mapping can take longer than a normal send
+        # request. Give contact reads a separate cold-start budget.
+        timeout = max(self._client.timeout.read or 0, 60.0)
+        response = await self._client.get("/contacts", timeout=timeout)
         response.raise_for_status()
         return response.json()
 

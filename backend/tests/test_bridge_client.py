@@ -7,6 +7,26 @@ import pytest
 from app.integrations.whatsapp.client import BridgeSendError, HttpWhatsAppBridge, SendReceipt
 
 
+async def test_initial_contact_loading_has_its_own_budget_without_changing_other_calls() -> None:
+    reads: dict[str, float] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        reads[request.url.path] = request.extensions["timeout"]["read"]
+        return httpx.Response(
+            200, json=[] if request.url.path == "/contacts" else {"status": "ready"}
+        )
+
+    bridge = HttpWhatsAppBridge(
+        "http://fixture-bridge", timeout_seconds=5, transport=httpx.MockTransport(handler)
+    )
+    try:
+        assert await bridge.contacts() == []
+        await bridge.status()
+    finally:
+        await bridge.close()
+    assert reads == {"/contacts": 60.0, "/status": 5.0}
+
+
 async def test_send_payloads_and_receipts_use_the_same_stable_operation_id(tmp_path: Path) -> None:
     calls: list[tuple[str, dict[str, Any]]] = []
 
