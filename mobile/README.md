@@ -34,6 +34,13 @@ Generated reports are available for 48 hours, then deleted at startup or on norm
 
 ## Build locally on Windows
 
+Version 1.3.0 adds Shared tasks, selected-person reminders and a simpler navigation flow.
+Each phone must enable reminders and grant notification permission under Shared tasks.
+Use Test notification on the physical phone. Background refresh is read-only and takes
+15 minutes or longer; Android power restrictions and force-stop can delay it. It never
+starts BUSY or sends bills automatically. See `docs/mobile-workflow-and-roadmap.md` at
+the repository root for task recurrence, access controls and reminder limitations.
+
 Install dependencies with `bun install`. The release build uses official Google SDK tools and Microsoft's OpenJDK under the ignored `data/android-build` folder. Run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Build-Android.ps1` from the repository root. The script checks TypeScript, regenerates the native Android project, applies private release signing and builds ARM phone APKs.
 
 Output: `output/android/HS-Traders-Office.apk`. The private signing key and its credentials stay under `data/android-build/`; preserve them securely for future app updates. They must never be committed. `mobile/android` is generated and ignored. An optional `eas.json` is provided for a future cloud build, but the initial build is local.

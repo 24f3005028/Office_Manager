@@ -46,6 +46,7 @@ mobile/.env.local
 mobile/build/
 mobile/web-build/
 output/android/
+output/mobile-ui/
 .g/
 .gradle/
 local.properties

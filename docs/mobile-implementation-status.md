@@ -2,6 +2,8 @@
 
 ## Implemented
 
+- Version 1.3.0 (Android versionCode 6): simpler task menus, three-step bill sending, Activity sections, retained Office/task drafts, Android Back handling, circular icon containers and native date/time pickers. Shared tasks support due dates, selected reminder recipients, daily/weekly/monthly repeats and audited completion. Phone reminders use opt-in Android local notifications plus private read-only background task refresh (15 minutes or longer; Android may delay it). BUSY and WhatsApp actions remain explicit/manual. See `mobile-workflow-and-roadmap.md` for limits and the agreed next party-page proposal.
+
 - Version 1.2.2 (Android versionCode 5) replaces raw JSON parse failures from empty/HTML/truncated gateway responses with actionable offline messages, marks failed WhatsApp status checks unavailable, and adds an explicit connection refresh. Six client regression tests verify response handling and that uncertain writes are not automatically repeated.
 
 - Version 1.2.1 (Android versionCode 4) adds dashboard/native Copy code buttons and remote invitation creation for the single server-configured invite manager. The designated approved account is configured in ignored local settings; its phone is not embedded in the app or committed. The capability is server-authorized, revocable, and invitation creators are audited.
