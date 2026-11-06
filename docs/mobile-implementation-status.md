@@ -2,6 +2,8 @@
 
 ## Implemented
 
+- Version 1.2.2 (Android versionCode 5) replaces raw JSON parse failures from empty/HTML/truncated gateway responses with actionable offline messages, marks failed WhatsApp status checks unavailable, and adds an explicit connection refresh. Six client regression tests verify response handling and that uncertain writes are not automatically repeated.
+
 - Version 1.2.1 (Android versionCode 4) adds dashboard/native Copy code buttons and remote invitation creation for the single server-configured invite manager. The designated approved account is configured in ignored local settings; its phone is not embedded in the app or committed. The capability is server-authorized, revocable, and invitation creators are audited.
 
 - Version 1.2.0 (Android versionCode 3) adds the mobile Office tab: Pouncha preview/update, date/category document selection, saved WhatsApp recipients, opening messages, explicit send confirmation, job progress/cancellation and per-user request history. Every approved mobile user can use both tools.

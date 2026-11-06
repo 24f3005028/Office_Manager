@@ -44,4 +44,6 @@ Validation commands: `bun run typecheck`, `bun run export`; backend tests in `ba
 
 ## Current verification limits
 
+If the phone reports that the office is unavailable, run `Start-Office.cmd` on the office computer and use **Office → Send bills → Check office connection** (or reopen the Office tab in older versions). The private URL can return 502 while the local services are stopped. Starting Tailscale alone does not start the dashboard services. Version 1.2.2 handles empty/truncated responses without exposing JSON parsing errors and never automatically repeats unconfirmed sends or updates. Run `bun run test` for the client response-handling regression tests.
+
 Native BUSY report navigation/PDF save must pass `backend/scripts/verify_mobile_report.py` on the office desktop before fresh-report generation can be considered verified. Mock API tests do not substitute for this check. Real phone cellular-network access and a real WhatsApp delivery require the owner's account/device setup. No actual WhatsApp message is sent by tests.

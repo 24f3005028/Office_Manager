@@ -143,7 +143,10 @@ export default function OfficeToolsScreen({ api }: { api: Api }) {
     if (tool !== "send") return;
     void api<{ connected?: boolean; status?: string }>("/office/whatsapp")
       .then(setBridge)
-      .catch((reason) => setError(errorMessage(reason)));
+      .catch((reason) => {
+        setBridge({ connected: false, status: "Unavailable" });
+        setError(errorMessage(reason));
+      });
   }, [api, tool]);
   useEffect(() => {
     if (tool !== "send" || contact) return;
@@ -470,7 +473,7 @@ export default function OfficeToolsScreen({ api }: { api: Api }) {
       </View>
       {error && (
         <View style={styles.notice}>
-          <Text style={styles.error}>{error}</Text>
+          <Text style={[styles.error, styles.grow]}>{error}</Text>
         </View>
       )}
       {busy && <ActivityIndicator color={palette.blue} />}
@@ -540,6 +543,25 @@ export default function OfficeToolsScreen({ api }: { api: Api }) {
             {bridge?.connected ? "Connected" : (bridge?.status ?? "Checking…")}.
             Bills come from saved PDFs; BUSY is not operated.
           </Note>
+          <Button
+            title="Check office connection"
+            secondary
+            icon="shield"
+            disabled={busy}
+            onPress={() =>
+              void run(async () => {
+                setBridge(
+                  await api<NonNullable<typeof bridge>>("/office/whatsapp"),
+                );
+                if (!contact)
+                  setContacts(
+                    await api<Contact[]>(
+                      `/office/contacts?q=${encodeURIComponent(contactQuery)}`,
+                    ),
+                  );
+              })
+            }
+          />
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>1. Choose documents</Text>
             <View style={styles.row}>
