@@ -66,13 +66,28 @@ export async function request<T>(
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    const data = await response.json();
-    if (!response.ok)
-      throw new Error(
-        typeof data.detail === "string"
-          ? data.detail
-          : "The office could not complete this request.",
-      );
+    const text = await response.text();
+    const incomplete =
+      body !== undefined
+        ? "The office did not confirm this request. Check its result in Activity or Office requests before trying again."
+        : response.status === 401
+          ? "Access expired or was revoked. Ask the office for a new invite."
+          : response.status >= 500
+            ? "The office service is offline or restarting. Start Office Dashboard on the office PC, then refresh this screen."
+            : "The office returned an incomplete response. Refresh this screen; if it continues, check Office Dashboard on the office PC.";
+    let data: unknown;
+    try {
+      data = text.trim() ? JSON.parse(text) : null;
+    } catch {
+      throw new Error(incomplete);
+    }
+    if (data === null || typeof data !== "object") throw new Error(incomplete);
+    if (!response.ok) {
+      if (body !== undefined && response.status >= 500)
+        throw new Error(incomplete);
+      const detail = "detail" in data ? data.detail : null;
+      throw new Error(typeof detail === "string" ? detail : incomplete);
+    }
     return data as T;
   } catch (error) {
     if (
@@ -89,7 +104,9 @@ export async function request<T>(
         error.message === "Network request failed")
     ) {
       throw new Error(
-        "Cannot reach the office. Check Tailscale and your connection, then try again.",
+        body === undefined
+          ? "Cannot reach the office. Check Tailscale and your connection, then refresh this screen."
+          : "Connection lost before confirmation. Check the request result in Activity or Office requests before trying again.",
       );
     }
     throw error;
