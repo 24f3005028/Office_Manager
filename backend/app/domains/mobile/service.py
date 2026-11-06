@@ -16,6 +16,7 @@ from typing import Any
 import httpx
 
 from app.config import Settings
+from app.domains.mobile.all_outstanding import ALL_ID, ALL_NAME, AllAccountsExporter, verify_all_pdf
 from app.domains.mobile.desktop import desktop_lock, office_warning
 from app.domains.mobile.invoices import InvoiceCatalogue, invoice_filename
 from app.domains.mobile.office import OfficeTools
@@ -46,6 +47,7 @@ class MobileService:
         self.office = OfficeTools(store)
         self.tasks = TaskStore(store.database)
         self.exporter = exporter or OutstandingExporter(settings)
+        self.all_exporter = AllAccountsExporter(settings)
         self.directory = settings.database_path.expanduser().resolve().parent / "mobile-reports"
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mobile-reports")
 
@@ -120,10 +122,17 @@ class MobileService:
                 directory = self.directory / job_id
                 directory.mkdir(parents=True, exist_ok=True)
                 as_of = date.fromisoformat(job["as_of"])
-                path = self.exporter.export_report(job["party_name"], as_of, directory)
+                if job["party_id"] == ALL_ID:
+                    path, snapshot = self.all_exporter.export_all(as_of, directory)
+                    content = json.dumps(snapshot, ensure_ascii=False).encode("utf-8")
+                    (directory / "outstanding.json").write_bytes(content)
+                    details = verify_all_pdf(path, snapshot, as_of)
+                    details["data_hash"] = hashlib.sha256(content).hexdigest()
+                else:
+                    path = self.exporter.export_report(job["party_name"], as_of, directory)
+                    details = verify_report(path, job["party_name"], as_of)
                 if path.resolve().parent != directory.resolve():
                     raise SyncError("The report was not saved in its private output folder.")
-                details = verify_report(path, job["party_name"], as_of)
                 checksum = hashlib.sha256(path.read_bytes()).hexdigest()
                 self.store.update_job(
                     job_id,
@@ -145,6 +154,32 @@ class MobileService:
                 ),
             )
             self._remove_report_directory(job_id)
+
+    def submit_all(self, user_id: str, as_of: date, key: str) -> dict[str, Any]:
+        from zoneinfo import ZoneInfo
+
+        if not REPORT_START <= as_of <= datetime.now(ZoneInfo("Asia/Kolkata")).date():
+            raise ValueError("Choose a status date from 16 January 2025 through today.")
+        self.cleanup_reports()
+        job, created = self.store.create_job(
+            user_id, {"id": ALL_ID, "name": ALL_NAME}, as_of.isoformat(), key
+        )
+        if created:
+            self.pool.submit(self.execute, job["id"])
+        return job
+
+    def outstanding_data(self, user_id: str, job_id: str) -> dict[str, Any]:
+        pdf, job = self.report_file(user_id, job_id)
+        if job["party_id"] != ALL_ID:
+            raise ValueError("This is not an all-account outstanding report.")
+        path = pdf.parent / "outstanding.json"
+        if path.is_symlink() or path.resolve().parent != pdf.parent:
+            raise ValueError("Outstanding view is unavailable.")
+        content = path.read_bytes()
+        if hashlib.sha256(content).hexdigest() != json.loads(job["details"])["data_hash"]:
+            raise ValueError("Outstanding data changed. Request a fresh report.")
+        result: dict[str, Any] = json.loads(content)
+        return result
 
     def report_file(self, user_id: str, job_id: str) -> tuple[Path, dict[str, Any]]:
         self.cleanup_reports()

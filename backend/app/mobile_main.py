@@ -87,6 +87,11 @@ class ReportRequest(Payload):
     request_key: str = Field(min_length=8, max_length=100, pattern=r"^[a-zA-Z0-9-]+$")
 
 
+class AllReportRequest(Payload):
+    as_of: date
+    request_key: str = Field(min_length=8, max_length=100, pattern=r"^[a-zA-Z0-9-]+$")
+
+
 class MobileInviteRequest(Payload):
     name: str = Field(min_length=1, max_length=100, pattern=r"^[^\x00-\x1f]+$")
     phone: str = Field(pattern=r"^[1-9][0-9]{7,14}$")
@@ -225,6 +230,24 @@ def create_mobile_app(
     def history(request: Request, current: CurrentUser) -> list[dict[str, Any]]:
         instance(request).cleanup_reports()
         return instance(request).store.jobs(current["id"])
+
+    @app.post("/mobile/v1/outstanding/all", status_code=202)
+    def all_outstanding(
+        payload: AllReportRequest, request: Request, current: CurrentUser
+    ) -> dict[str, Any]:
+        try:
+            return instance(request).submit_all(current["id"], payload.as_of, payload.request_key)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/mobile/v1/reports/{job_id}/outstanding")
+    def outstanding_rows(job_id: str, request: Request, current: CurrentUser) -> dict[str, Any]:
+        try:
+            return instance(request).outstanding_data(current["id"], job_id)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(
+                404, "All-account report unavailable or expired. Request a fresh report."
+            ) from exc
 
     @app.get("/mobile/v1/reports/{job_id}")
     def get_report(job_id: str, request: Request, current: CurrentUser) -> dict[str, Any]:
