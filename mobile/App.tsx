@@ -20,6 +20,10 @@ import OfficeToolsScreen, { OfficeToolsHandle } from "./src/OfficeToolsScreen";
 import InviteManager from "./src/InviteManager";
 import TasksScreen, { TasksHandle } from "./src/TasksScreen";
 import DateField from "./src/DateField";
+import NavigationDrawer, { NavigationScreen } from "./src/NavigationDrawer";
+import AllOutstandingScreen, {
+  AllOutstandingHandle,
+} from "./src/AllOutstandingScreen";
 import {
   SESSION_KEY,
   stopTaskReminders,
@@ -62,14 +66,7 @@ const statusText: Record<string, string> = {
   cancelled: "Someone is using BUSY",
   failed: "Report could not be created",
 };
-type Screen =
-  | "home"
-  | "outstanding"
-  | "invoices"
-  | "history"
-  | "account"
-  | "tools"
-  | "tasks";
+type Screen = NavigationScreen;
 const errorText = (error: unknown) =>
   error instanceof Error
     ? error.message
@@ -85,7 +82,7 @@ function OfficeApp() {
   const [screen, setScreen] = useState<Screen>("home"),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
-  const selectedTab = screen === "tasks" ? "tools" : screen;
+  const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState(""),
     [parties, setParties] = useState<Party[]>([]),
     [searching, setSearching] = useState(false),
@@ -103,6 +100,13 @@ function OfficeApp() {
   );
   const officeTools = useRef<OfficeToolsHandle>(null);
   const taskScreen = useRef<TasksHandle>(null);
+  const allScreen = useRef<AllOutstandingHandle>(null);
+  const [allSelected, setAllSelected] = useState<Report | null>(null);
+  const onAllReport = useCallback(
+    (row: Report) =>
+      setHistory((rows) => [row, ...rows.filter((item) => item.id !== row.id)]),
+    [],
+  );
   const tasksFrom = useRef<Screen>("home");
   const accountFrom = useRef<Screen>("home");
   const statementFrom = useRef<Screen>("home");
@@ -165,10 +169,15 @@ function OfficeApp() {
         setPerson(current);
         const rows = await api<Report[]>("/reports");
         setHistory(rows);
-        const pending = rows.find((row) =>
-          ["queued", "warning", "generating"].includes(row.status),
+        const pending = rows.find(
+          (row) =>
+            row.party_id !== "all-accounts" &&
+            ["queued", "warning", "generating"].includes(row.status),
         );
         if (pending) setReport(pending);
+        setAllSelected(
+          rows.find((row) => row.party_id === "all-accounts") ?? null,
+        );
       })
       .catch((reason) => setError(errorText(reason)));
   }, [session, api]);
@@ -255,6 +264,7 @@ function OfficeApp() {
   }
   async function open(next: Screen) {
     Keyboard.dismiss();
+    setMenuOpen(false);
     setScreen(next);
     setError("");
     if (next === "history")
@@ -269,7 +279,12 @@ function OfficeApp() {
       });
   }
   function back() {
+    if (menuOpen) {
+      setMenuOpen(false);
+      return true;
+    }
     if (busy) return true;
+    if (screen === "allOutstanding" && allScreen.current?.back()) return true;
     Keyboard.dismiss();
     setError("");
     if (screen === "tasks") {
@@ -310,7 +325,7 @@ function OfficeApp() {
     if (!session) return;
     const listener = BackHandler.addEventListener("hardwareBackPress", back);
     return () => listener.remove();
-  }, [screen, session, busy, report, party, activityTab]);
+  }, [screen, session, busy, report, party, activityTab, menuOpen]);
   async function generate() {
     if (!party) return;
     await action(async () => {
@@ -549,6 +564,11 @@ function OfficeApp() {
         accessibilityLabel={`View statement for ${row.party_name}`}
         disabled={busy}
         onPress={() => {
+          if (row.party_id === "all-accounts") {
+            setAllSelected({ ...row });
+            setScreen("allOutstanding");
+            return;
+          }
           statementFrom.current = screen;
           setReport(row);
           setParty(null);
@@ -592,7 +612,24 @@ function OfficeApp() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={styles.header}>
-          <Logo />
+          {session ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Open navigation menu"
+              accessibilityState={{ expanded: menuOpen }}
+              onPress={() => {
+                Keyboard.dismiss();
+                setMenuOpen(true);
+              }}
+              style={styles.menuButton}
+            >
+              <View style={styles.hamburgerLine} />
+              <View style={styles.hamburgerLine} />
+              <View style={styles.hamburgerLine} />
+            </Pressable>
+          ) : (
+            <Logo />
+          )}
           <View style={styles.headerText}>
             <Text style={styles.brand}>H.S. TRADERS</Text>
             <Text style={styles.brandSub}>Your office, wherever you are</Text>
@@ -602,7 +639,7 @@ function OfficeApp() {
               accessibilityRole="button"
               accessibilityLabel={
                 screen === "account"
-                  ? "Back to home"
+                  ? "Close account"
                   : "Your account and connection"
               }
               disabled={busy}
@@ -841,6 +878,13 @@ function OfficeApp() {
                   </View>
                   <Icon name="chevron" size={18} />
                 </Pressable>
+                <TaskTile
+                  title="All accounts outstanding"
+                  subtitle="Pending bills and totals for every party."
+                  icon="statement"
+                  disabled={busy}
+                  onPress={() => void open("allOutstanding")}
+                />
                 <TaskTile
                   title="Office tools"
                   subtitle="Update Pouncha or send saved bill PDFs."
@@ -1253,7 +1297,8 @@ function OfficeApp() {
               </ScrollView>
             ) : screen === "tools" ||
               screen === "history" ||
-              screen === "tasks" ? null : (
+              screen === "tasks" ||
+              screen === "allOutstanding" ? null : (
               <ScrollView contentContainerStyle={styles.content}>
                 <Heading
                   eyebrow="YOUR ACCOUNT"
@@ -1349,7 +1394,7 @@ function OfficeApp() {
                   <Text style={styles.dangerText}>Disconnect this phone</Text>
                 </Pressable>
                 <Text style={[styles.noteText, { textAlign: "center" }]}>
-                  H.S. Traders Office · Version 1.3.0
+                  H.S. Traders Office · Version 1.4.0
                 </Text>
               </ScrollView>
             )}
@@ -1396,56 +1441,38 @@ function OfficeApp() {
                 visible={screen === "tasks"}
               />
             </View>
+            <View
+              style={[
+                styles.screen,
+                { display: screen === "allOutstanding" ? "flex" : "none" },
+              ]}
+            >
+              <AllOutstandingScreen
+                ref={allScreen}
+                api={api}
+                visible={screen === "allOutstanding"}
+                selected={allSelected}
+                onReport={onAllReport}
+                pdfActions={(id) =>
+                  pdfActions("reports", id, "All accounts outstanding")
+                }
+              />
+            </View>
           </View>
         )}
         {session && (
-          <View style={styles.nav}>
-            {(
-              [
-                ["home", "home", "Home"],
-                ["outstanding", "statement", "Statements"],
-                ["invoices", "search", "Bills"],
-                ["tools", "calendar", "Office"],
-                ["history", "history", "Activity"],
-              ] as const
-            ).map(([key, icon, title]) => (
-              <Pressable
-                key={key}
-                accessibilityRole="tab"
-                accessibilityState={{
-                  selected: selectedTab === key,
-                  disabled: busy,
-                }}
-                disabled={busy}
-                onPress={() => void open(key)}
-                style={({ pressed }) => [
-                  styles.navItem,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <View
-                  style={[
-                    styles.navIcon,
-                    selectedTab === key && styles.navActive,
-                  ]}
-                >
-                  <Icon
-                    name={icon}
-                    size={21}
-                    color={selectedTab === key ? palette.navy : palette.muted}
-                  />
-                </View>
-                <Text
-                  style={[
-                    styles.navLabel,
-                    selectedTab === key && styles.navLabelActive,
-                  ]}
-                >
-                  {title}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          <NavigationDrawer
+            visible={menuOpen}
+            current={screen}
+            name={person?.name ?? "Office user"}
+            disabled={busy}
+            onClose={() => setMenuOpen(false)}
+            onSelect={(next) => {
+              if (next === "account" && screen !== "account")
+                accountFrom.current = screen;
+              void open(next);
+            }}
+          />
         )}
       </KeyboardAvoidingView>
     </SafeAreaView>

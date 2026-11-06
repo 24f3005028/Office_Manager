@@ -15,12 +15,19 @@ export interface Party {
 }
 export interface Report {
   id: string;
+  party_id?: string;
   party_name: string;
   as_of: string;
   status: string;
   error: string | null;
   finished_at: string | null;
-  details: { pending_amount: string; pages: number } | null;
+  details: {
+    pending_amount: string;
+    pages: number;
+    scope?: string;
+    account_count?: number;
+    bill_count?: number | null;
+  } | null;
 }
 export interface Invoice {
   file_id: string;
