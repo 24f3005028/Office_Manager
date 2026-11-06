@@ -17,6 +17,7 @@ __pycache__/
 backend/.venv/
 backend/.env
 backend/data/
+backend/pending bill.xlsx
 backend/config/google_service_account.json
 backend/env/
 backend/.pytest_cache/
@@ -47,6 +48,7 @@ mobile/build/
 mobile/web-build/
 output/android/
 output/mobile-ui/
+output/pdf/
 .g/
 .gradle/
 local.properties
@@ -73,4 +75,5 @@ frontend/tsconfig.tsbuildinfo
 coverage/
 .DS_Store
 Thumbs.db
+~$*
 *.log

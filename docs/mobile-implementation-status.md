@@ -2,6 +2,8 @@
 
 ## Implemented
 
+- Version 1.4.0 (Android versionCode 7): hamburger drawer replaces bottom navigation. All-account outstanding requests use BUSY All Account/new1, with verified Excel parsing, searchable party/bill display and print-style PDF sharing. The supplied 95-account/280-bill report and generated 10-page PDF reconcile. The live native route still needs an app test because computer control was stopped; its settings are covered by supplied screenshots and regression tests. See `android-release-1.4.0.md`.
+
 - Version 1.3.0 (Android versionCode 6): simpler task menus, three-step bill sending, Activity sections, retained Office/task drafts, Android Back handling, circular icon containers and native date/time pickers. Shared tasks support due dates, selected reminder recipients, daily/weekly/monthly repeats and audited completion. Phone reminders use opt-in Android local notifications plus private read-only background task refresh (15 minutes or longer; Android may delay it). BUSY and WhatsApp actions remain explicit/manual. See `mobile-workflow-and-roadmap.md` for limits and the agreed next party-page proposal.
 
 - Version 1.2.2 (Android versionCode 5) replaces raw JSON parse failures from empty/HTML/truncated gateway responses with actionable offline messages, marks failed WhatsApp status checks unavailable, and adds an explicit connection refresh. Six client regression tests verify response handling and that uncertain writes are not automatically repeated.

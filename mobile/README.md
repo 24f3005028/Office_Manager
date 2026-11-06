@@ -34,6 +34,12 @@ Generated reports are available for 48 hours, then deleted at startup or on norm
 
 ## Build locally on Windows
 
+Version 1.4.0 uses the header hamburger menu instead of bottom tabs. All accounts
+outstanding shows grouped pending bills and totals; Share report offers PDF download,
+native sharing and own-number WhatsApp delivery. Fresh reports use All Account/new1
+and the office warning. The print-style PDF is built from the same validated export
+as the app view. The company-header template is local to the office database folder.
+
 Version 1.3.0 adds Shared tasks, selected-person reminders and a simpler navigation flow.
 Each phone must enable reminders and grant notification permission under Shared tasks.
 Use Test notification on the physical phone. Background refresh is read-only and takes
