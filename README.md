@@ -134,7 +134,8 @@ The private mobile app includes party statements, saved bill PDFs, office tools 
 shared tasks. Its home-screen task widget supports completion, adding a task and
 manual refresh; the party widget opens search directly. See
 [mobile design and widget behaviour](docs/mobile-design.md) and
-[Android release 1.6.0](docs/android-release-1.6.0.md).
+[Android release 1.6.1](docs/android-release-1.6.1.md). Open PDF uses a PDF viewer,
+preferring Google Drive on Android, instead of print preview.
 
 ## Checks
 

@@ -36,6 +36,18 @@ second JavaScript splash or startup spinner.
   normal reminder reconciliation retains subsequent repeating occurrences.
 - Compact widgets show fewer rows, rather than shrinking controls below 48 dp.
 
+## PDF viewing
+
+Every Open PDF button uses the same download-and-view path: party statements,
+all-account reports, statement activity and saved bill PDFs. Android opens a local
+`content://` URI through Google Drive's PDF viewer when available, or another
+registered PDF viewer if Drive is unavailable. The intent grants read access only;
+it contains no office URL, bearer token or write permission. The print API and its
+package have been removed. Share and Download remain separate actions.
+
+The native viewer uses Android's standard `ACTION_VIEW` and `application/pdf`, with
+the app's FileProvider. See [Android file sharing](https://developer.android.com/training/secure-file-sharing/share-file).
+
 ## Design references
 
 Applied guidance from [Android widget design](https://developer.android.com/design/ui/mobile/guides/widgets)
