@@ -64,31 +64,32 @@ configuration no longer matches. Keep release optimization enabled.
 
 ## Android home-screen widgets (1.5)
 
-- **Office tasks** shows the next due open tasks, defaulting to your assignments.
-  Switch to all office tasks under **Account & connection → Home-screen widgets**.
+- **Office tasks** automatically shows all open office tasks after signing in.
+  No enable switch or widget data setup is needed. Optionally choose only your
+  assignments under **Account & connection → Home-screen widgets**.
   It shows up to three rows when enlarged, with the open/overdue counts and last
   refresh time. Tap it to manage tasks; task completion still uses the app's
   confirmation and handles repeating tasks as before.
-- **Party outstanding** shows one chosen party's latest completed saved statement,
-  pending amount and statement date. Choose the party using the existing search,
-  then **Use party for home widget**. All party widgets on this phone share that choice.
-  Tapping opens the saved report, or the selected party's create-statement screen
-  when no available report exists. It never creates a report on its own.
+- **Party statement search** is a compact search bar. Tap it to open party search
+  with the keyboard ready; pick any party to open its latest available saved report
+  and the primary **Share PDF** action. Choose WhatsApp in Android's share menu.
+  If no saved report is available, request a fresh statement in the app. An existing
+  running request is reused. No party needs to be configured on the widget.
 - Add either widget from the app, or long-press an empty home-screen area → Widgets
   → H.S. Traders Office. Android's launcher must confirm adding a widget. Older
   launchers may require the long-press method. Resize by long-pressing the widget.
-- Widgets must be enabled in the app. Updates read only `/me`, `/tasks`, `/reports`
-  using the existing session and private Tailscale connection. Foreground changes
+- Task data loads automatically using only `/me` and `/tasks` with the existing
+  session and private Tailscale connection. Foreground changes
   refresh them; Android background updates are best effort, 15 minutes or longer.
   BUSY exports, Pouncha sync, sends and task writes never run from this worker.
-- Offline reads preserve labelled saved data instead of inventing a zero balance.
+- Offline reads preserve timestamped task data.
   Snapshot visibility is bounded by session expiry or 24 hours without refresh.
-  Party report data also stops displaying after its existing 48-hour availability.
+  In-app quick sharing checks the report's existing 48-hour availability.
   Android refresh timing can delay repainting until its next widget update.
 - Disconnecting, expired access or an observed server revocation clears widget
-  snapshots and stops their reader. Turning widgets off clears displayed data
-  without disabling task notifications. Widget text is visible on the unlocked
-  home screen; enable it only if that is acceptable on the phone.
+  snapshots and stops their reader. Remove widgets from the home screen using
+  the launcher's long-press menu. Task text is visible on the unlocked home screen.
+  The search bar never displays cached party names or balances.
 - The local Expo module under `modules/office-widgets` uses Android RemoteViews.
   It stores no tokens, phone numbers or PDFs, and keeps its private snapshot in
   Android's no-backup directory. Native source survives Expo prebuild; generated
