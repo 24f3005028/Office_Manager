@@ -128,6 +128,14 @@ The bridge and backend use stable operation IDs and receipts for each opening me
 and PDF. If a response is lost after a send may have started, the job is paused as `needs_review`
 instead of blindly resending a document and risking a duplicate.
 
+## Android app
+
+The private mobile app includes party statements, saved bill PDFs, office tools and
+shared tasks. Its home-screen task widget supports completion, adding a task and
+manual refresh; the party widget opens search directly. See
+[mobile design and widget behaviour](docs/mobile-design.md) and
+[Android release 1.6.0](docs/android-release-1.6.0.md).
+
 ## Checks
 
 ```powershell
