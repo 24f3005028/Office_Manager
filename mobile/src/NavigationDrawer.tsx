@@ -6,6 +6,7 @@ export type NavigationScreen =
   | "home"
   | "outstanding"
   | "allOutstanding"
+  | "accounts"
   | "invoices"
   | "tools"
   | "tasks"
@@ -62,6 +63,7 @@ export default function NavigationDrawer({
                 ["home", "home", "Home"],
                 ["outstanding", "statement", "Party statement"],
                 ["allOutstanding", "statement", "All outstanding"],
+                ["accounts", "file", "Copy account & balances"],
                 ["invoices", "search", "Find a bill"],
                 ["tools", "calendar", "Office tools"],
                 ["tasks", "check", "Office tasks"],
@@ -70,7 +72,7 @@ export default function NavigationDrawer({
               ] as const
             ).map(([key, icon, label], index) => (
               <View key={key}>
-                {(index === 1 || index === 4 || index === 7) && (
+                {(index === 1 || index === 5 || index === 8) && (
                   <Text
                     style={[
                       styles.eyebrow,
@@ -83,7 +85,7 @@ export default function NavigationDrawer({
                   >
                     {index === 1
                       ? "REPORTS"
-                      : index === 4
+                      : index === 5
                         ? "TEAM & OFFICE"
                         : "SETTINGS"}
                   </Text>

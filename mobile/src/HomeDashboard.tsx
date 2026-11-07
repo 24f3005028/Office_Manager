@@ -148,6 +148,13 @@ export default function HomeDashboard({
           disabled={disabled}
           onPress={() => onOpen("tools")}
         />
+        <TaskTile
+          title="Copy account & balances"
+          subtitle="Party ledgers and account groups"
+          icon="file"
+          disabled={disabled}
+          onPress={() => onOpen("accounts")}
+        />
       </View>
       {children}
     </ScrollView>

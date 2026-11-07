@@ -22,6 +22,9 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import OfficeToolsScreen, { OfficeToolsHandle } from "./src/OfficeToolsScreen";
 import InviteManager from "./src/InviteManager";
 import TasksScreen, { TasksHandle } from "./src/TasksScreen";
+import AccountReportsScreen, {
+  AccountReportsHandle,
+} from "./src/AccountReportsScreen";
 import DateField from "./src/DateField";
 import WidgetSettingsCard from "./src/WidgetSettingsCard";
 import {
@@ -117,6 +120,7 @@ function OfficeApp() {
   const officeTools = useRef<OfficeToolsHandle>(null);
   const taskScreen = useRef<TasksHandle>(null);
   const allScreen = useRef<AllOutstandingHandle>(null);
+  const accountReports = useRef<AccountReportsHandle>(null);
   const [allSelected, setAllSelected] = useState<Report | null>(null);
   const onAllReport = useCallback(
     (row: Report) =>
@@ -368,6 +372,7 @@ function OfficeApp() {
     }
     if (busy) return true;
     if (screen === "allOutstanding" && allScreen.current?.back()) return true;
+    if (screen === "accounts" && accountReports.current?.back()) return true;
     Keyboard.dismiss();
     setError("");
     if (screen === "tasks") {
@@ -1344,6 +1349,7 @@ function OfficeApp() {
             ) : screen === "tools" ||
               screen === "history" ||
               screen === "tasks" ||
+              screen === "accounts" ||
               screen === "allOutstanding" ? null : (
               <ScrollView contentContainerStyle={styles.content}>
                 <Heading
@@ -1437,7 +1443,7 @@ function OfficeApp() {
                   <Text style={styles.dangerText}>Disconnect this phone</Text>
                 </Pressable>
                 <Text style={[styles.noteText, { textAlign: "center" }]}>
-                  H.S. Traders Office · Version 1.6.1
+                  H.S. Traders Office · Version 1.7.0
                 </Text>
               </ScrollView>
             )}
@@ -1499,6 +1505,19 @@ function OfficeApp() {
                 pdfActions={(id) =>
                   pdfActions("reports", id, "All accounts outstanding")
                 }
+              />
+            </View>
+            <View
+              style={[
+                styles.screen,
+                { display: screen === "accounts" ? "flex" : "none" },
+              ]}
+            >
+              <AccountReportsScreen
+                ref={accountReports}
+                api={api}
+                visible={screen === "accounts"}
+                pdfActions={(id, label) => pdfActions("reports", id, label)}
               />
             </View>
           </View>

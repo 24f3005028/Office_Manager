@@ -10,6 +10,7 @@ export default function DateField({
   disabled = false,
   mode = "date",
   maximumDate,
+  minimumDate,
 }: {
   label: string;
   value: string;
@@ -17,6 +18,7 @@ export default function DateField({
   disabled?: boolean;
   mode?: "date" | "time";
   maximumDate?: Date;
+  minimumDate?: Date;
 }) {
   const [open, setOpen] = useState(false);
   const parsed = new Date(
@@ -56,6 +58,7 @@ export default function DateField({
           mode={mode}
           is24Hour
           maximumDate={maximumDate}
+          minimumDate={minimumDate}
           onChange={(event, date) => {
             setOpen(false);
             if (event.type !== "set" || !date) return;
