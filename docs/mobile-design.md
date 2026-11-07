@@ -48,6 +48,32 @@ package have been removed. Share and Download remain separate actions.
 The native viewer uses Android's standard `ACTION_VIEW` and `application/pdf`, with
 the app's FileProvider. See [Android file sharing](https://developer.android.com/training/secure-file-sharing/share-file).
 
+## Copy account and group balances
+
+The Reports drawer and home shortcut open two focused options. Copy account allows
+searching the account catalogue, optionally within one named group, then choosing
+From and Through dates. Defaults come from the office's current Indian financial
+year. The form and its dates survive navigation between sections.
+
+Group balances asks for one group and an as-of date within the current financial
+year. Group names come from the owner's Name column, with exact membership from
+the imported account list; parent categories are not substituted. The resulting
+list shows each nonzero account, debit and credit totals, search and pagination.
+Tapping an account opens its Copy account form. A PDF uses the same reconciled
+rows as the in-app view.
+
+Creating either report requires an explicit confirmation. Both use the existing
+five-second office warning and shared BUSY desktop lock. Progress reads never
+start exports. BUSY report settings are set and checked before export, and group
+totals must reconcile before a result becomes available. Temporary Excel files
+are removed after parsing, including failures. PDFs and private balance snapshots
+follow the existing 48-hour availability and cleanup policy.
+
+The catalogue stores only names and group membership in the dashboard's own
+database. Import it with `python -m scripts.import_mobile_accounts <xlsx-path>`
+from the backend directory; the existing trade-party list remains compatible.
+BUSY's database is never accessed.
+
 ## Design references
 
 Applied guidance from [Android widget design](https://developer.android.com/design/ui/mobile/guides/widgets)
