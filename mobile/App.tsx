@@ -1,9 +1,9 @@
+import { AppDialogProvider, useAppDialog } from "./src/AppDialog";
 import YarnProgress from "./src/YarnProgress";
 import * as SplashScreen from "expo-splash-screen";
 import HomeDashboard from "./src/HomeDashboard";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Alert,
   AppState,
   BackHandler,
   FlatList,
@@ -85,6 +85,7 @@ const errorText = (error: unknown) =>
     ? error.message
     : "Something went wrong. Please try again.";
 function OfficeApp() {
+  const dialog = useAppDialog();
   const [session, setSession] = useState<Session | null>(null),
     [restoring, setRestoring] = useState(true);
   const currentSession = useRef(session);
@@ -486,7 +487,7 @@ function OfficeApp() {
         await FileSystem.writeAsStringAsync(destination, content, {
           encoding: FileSystem.EncodingType.Base64,
         });
-        Alert.alert(
+        dialog.alert(
           "PDF saved",
           "Your PDF was saved in the folder you selected.",
         );
@@ -1349,7 +1350,7 @@ function OfficeApp() {
                     onPress={() =>
                       void action(async () => {
                         setPerson(await api<Person>("/me"));
-                        Alert.alert(
+                        dialog.alert(
                           "Office connected",
                           "Your private connection is working.",
                         );
@@ -1373,7 +1374,7 @@ function OfficeApp() {
                   disabled={busy}
                   style={[styles.textButton, { alignSelf: "center" }]}
                   onPress={() =>
-                    Alert.alert(
+                    dialog.alert(
                       "Disconnect this phone?",
                       "You will need a new invite to connect again.",
                       [
@@ -1406,7 +1407,7 @@ function OfficeApp() {
                   <Text style={styles.dangerText}>Disconnect this phone</Text>
                 </Pressable>
                 <Text style={[styles.noteText, { textAlign: "center" }]}>
-                  H.S. Traders Office · Version 1.7.1
+                  H.S. Traders Office · Version 1.7.2
                 </Text>
               </ScrollView>
             )}
@@ -1506,7 +1507,9 @@ function OfficeApp() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <OfficeApp />
+      <AppDialogProvider>
+        <OfficeApp />
+      </AppDialogProvider>
     </SafeAreaProvider>
   );
 }

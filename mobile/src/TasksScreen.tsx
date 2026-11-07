@@ -1,3 +1,4 @@
+import { useAppDialog } from "./AppDialog";
 import YarnProgress from "./YarnProgress";
 import {
   forwardRef,
@@ -8,7 +9,6 @@ import {
   useState,
 } from "react";
 import {
-  Alert,
   AppState,
   Pressable,
   ScrollView,
@@ -45,6 +45,7 @@ export default forwardRef<
   TasksHandle,
   { api: Api; person: Person | null; visible: boolean }
 >(function TasksScreen({ api, person, visible }, ref) {
+  const dialog = useAppDialog();
   const [tasks, setTasks] = useState<OfficeTask[]>([]),
     [people, setPeople] = useState<TaskPerson[]>([]);
   const [filter, setFilter] = useState<"mine" | "all" | "done">("all");
@@ -124,10 +125,11 @@ export default forwardRef<
     [busy, form, title, notes, date, time, repeat, assignees, editing],
   );
   function closeForm() {
-    Alert.alert("Leave this task?", "Unsaved changes will be discarded.", [
+    dialog.alert("Leave this task?", "Unsaved changes will be discarded.", [
       { text: "Keep editing", style: "cancel" },
       {
         text: "Discard",
+        style: "destructive",
         onPress: () => {
           setForm(false);
           setEditing(null);
@@ -178,7 +180,7 @@ export default forwardRef<
     });
   }
   function complete(task: OfficeTask) {
-    Alert.alert(
+    dialog.alert(
       "Mark this task done?",
       task.repeat_rule === "none"
         ? task.title
@@ -516,7 +518,7 @@ export default forwardRef<
                           secondary
                           disabled={busy}
                           onPress={() =>
-                            Alert.alert(
+                            dialog.alert(
                               "Cancel this task?",
                               "It will be removed from the shared list and its reminders will stop after phones sync.",
                               [

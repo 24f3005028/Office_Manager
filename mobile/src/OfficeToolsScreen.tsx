@@ -1,3 +1,4 @@
+import { useAppDialog } from "./AppDialog";
 import YarnProgress from "./YarnProgress";
 import {
   ComponentRef,
@@ -9,7 +10,6 @@ import {
   useState,
 } from "react";
 import {
-  Alert,
   Pressable,
   ScrollView,
   Text,
@@ -97,6 +97,7 @@ export default forwardRef<
   { api, visible, mode, onShowActivity, onShowTasks },
   ref,
 ) {
+  const dialog = useAppDialog();
   const [tool, setTool] = useState<"menu" | "pouncha" | "send">("menu");
   const [sendStep, setSendStep] = useState(0);
   const [showResult, setShowResult] = useState(false);
@@ -287,7 +288,7 @@ export default forwardRef<
       setPreviewDates(datesKey);
       void submit("pouncha", payload);
     } else
-      Alert.alert(
+      dialog.alert(
         "Update the Pouncha sheet?",
         `Add the missing bills through ${displayDate(end)}. Existing rows are preserved. The office will get a five-second warning.`,
         [
@@ -312,7 +313,7 @@ export default forwardRef<
     const fallback = chosen.filter(
       (row) => row.date_source === "file_fallback",
     ).length;
-    Alert.alert(
+    dialog.alert(
       "Send these documents?",
       `${chosen.length} documents to ${contact.name}\n${contact.phone_display ?? contact.number ?? "Saved WhatsApp contact"}\n\nOldest first, with the dashboard's date labels and ordering.${fallback ? `\n\n${fallback} documents use the file date; verify before sending.` : ""}\n\nOpening message: ${message.trim() || "None"}`,
       [
@@ -405,7 +406,7 @@ export default forwardRef<
                   secondary
                   disabled={busy}
                   onPress={() =>
-                    Alert.alert(
+                    dialog.alert(
                       "Stop this sending request?",
                       "Documents already sent cannot be recalled.",
                       [
@@ -451,7 +452,7 @@ export default forwardRef<
               secondary
               disabled={busy}
               onPress={() =>
-                Alert.alert(
+                dialog.alert(
                   "Have you checked the sheet?",
                   "Only release this run after checking its rows in Google Sheets. This does not resend anything.",
                   [

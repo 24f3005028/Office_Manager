@@ -1,3 +1,4 @@
+import { useAppDialog } from "./AppDialog";
 import YarnProgress from "./YarnProgress";
 import {
   forwardRef,
@@ -8,7 +9,6 @@ import {
   useState,
 } from "react";
 import {
-  Alert,
   AppState,
   FlatList,
   Pressable,
@@ -76,6 +76,7 @@ export default forwardRef<
   { api, visible, selected, onReport, pdfActions },
   ref,
 ) {
+  const dialog = useAppDialog();
   const [asOf, setAsOf] = useState(todayIndia()),
     [report, setReport] = useState<Report | null>(null),
     [data, setData] = useState<Snapshot | null>(null);
@@ -164,7 +165,7 @@ export default forwardRef<
     };
   }, [visible, report?.id, report?.status, api, run]);
   function create() {
-    Alert.alert(
+    dialog.alert(
       "Refresh all-account outstanding?",
       `Create a fresh outstanding report for all parties through ${displayDate(asOf)}. The office gets a five-second warning and can cancel.`,
       [
