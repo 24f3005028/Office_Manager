@@ -44,7 +44,7 @@ class OfficeWidgetsTest {
     root.layout(0, 0, width, height)
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     root.draw(Canvas(bitmap))
-    val folder = File(System.getProperty("office.widget.previewDir"))
+    val folder = File(requireNotNull(System.getProperty("office.widget.previewDir")))
     folder.mkdirs()
     File(folder, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     bitmap.recycle()
@@ -65,67 +65,59 @@ class OfficeWidgetsTest {
     assertEquals("Open tasks", text(shadow.getViewFor(id), R.id.widget_open))
   }
 
-  @Test fun partyRemoteViewsShowNameAmountAndStatementDate() {
-    WidgetStore.write(context, data())
+  @Test fun partySearchNeedsNoSetupAndOpensSearch() {
     val shadow = shadowOf(manager)
-    val id = shadow.createWidget(PartyWidgetProvider::class.java, R.layout.office_widget)
+    val id = shadow.createWidget(PartyWidgetProvider::class.java, R.layout.office_party_search)
     val root = shadow.getViewFor(id)
-    assertEquals("Test Party", text(root, R.id.widget_title))
-    assertEquals("₹1,23,456.78", text(root, R.id.widget_summary))
-    assertEquals("Statement as of 2026-11-07", text(root, R.id.widget_row1))
-    assertEquals("Open statement", text(root, R.id.widget_open))
-    preview(root, "party-widget", 320, 220)
-    assertTrue(root.findViewById<View>(R.id.widget_open).performClick())
+    assertEquals("Search party…", text(root, R.id.widget_search_bar))
+    preview(root, "party-widget", 320, 64)
+    assertTrue(root.findViewById<View>(R.id.widget_search_bar).performClick())
     assertEquals("hstraders-office://widget/party", shadowOf(context as Application).nextStartedActivity.dataString)
   }
 
-  @Test fun expiredSnapshotDoesNotExposeTasksOrPartyBalance() {
+  @Test fun expiredSnapshotDoesNotExposeOldTasks() {
     WidgetStore.write(context, data().put("expiresAt", System.currentTimeMillis() - 1000))
     val shadow = shadowOf(manager)
-    for (provider in listOf(TasksWidgetProvider::class.java, PartyWidgetProvider::class.java)) {
-      val id = shadow.createWidget(provider, R.layout.office_widget)
+      val id = shadow.createWidget(TasksWidgetProvider::class.java, R.layout.office_widget)
       val root = shadow.getViewFor(id)
-      assertEquals("Set up widgets", text(root, R.id.widget_open))
-      assertFalse(text(root, R.id.widget_summary).contains("1,23,456"))
+      assertEquals("Open tasks", text(root, R.id.widget_open))
+      assertTrue(text(root, R.id.widget_summary).contains("load your office tasks"))
       assertEquals(View.GONE, root.findViewById<View>(R.id.widget_row1).visibility)
-    }
   }
 
-  @Test fun expiredReportKeepsPartyButHidesItsOldBalance() {
+  @Test fun legacyPartyBalanceIsNeverDisplayedInSearchWidget() {
     val snapshot = data()
-    snapshot.getJSONObject("party").put("availableUntil", System.currentTimeMillis() - 1000)
     WidgetStore.write(context, snapshot)
     val shadow = shadowOf(manager)
-    val id = shadow.createWidget(PartyWidgetProvider::class.java, R.layout.office_widget)
+    val id = shadow.createWidget(PartyWidgetProvider::class.java, R.layout.office_party_search)
     val root = shadow.getViewFor(id)
-    assertEquals("Test Party", text(root, R.id.widget_title))
-    assertEquals("No available saved statement", text(root, R.id.widget_summary))
+    assertEquals("Search party…", text(root, R.id.widget_search_bar))
+    assertNull(root.findViewById<View>(R.id.widget_summary))
   }
 
-  @Test fun longPartyNameStillLeavesTheActionVisibleAtMinimumSize() {
-    val snapshot = data()
-    snapshot.getJSONObject("party").put("name", "Test Party With A Long Textile Trading Account Name And Branch")
-    WidgetStore.write(context, snapshot)
+  @Test fun searchBarFitsOneHomeScreenRow() {
     val shadow = shadowOf(manager)
-    val id = shadow.createWidget(PartyWidgetProvider::class.java, R.layout.office_widget)
+    val id = shadow.createWidget(PartyWidgetProvider::class.java, R.layout.office_party_search)
     val root = shadow.getViewFor(id)
-    root.measure(View.MeasureSpec.makeMeasureSpec(280, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(220, View.MeasureSpec.EXACTLY))
-    root.layout(0, 0, 280, 220)
-    val action = root.findViewById<View>(R.id.widget_open)
-    assertTrue("Action bottom=${action.bottom}; title=${root.findViewById<View>(R.id.widget_title).height}; summary=${root.findViewById<View>(R.id.widget_summary).height}; row=${root.findViewById<View>(R.id.widget_row1).height}", action.bottom <= 220)
+    root.measure(View.MeasureSpec.makeMeasureSpec(280, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(64, View.MeasureSpec.EXACTLY))
+    root.layout(0, 0, 280, 64)
+    val action = root.findViewById<View>(R.id.widget_search_bar)
+    assertTrue(action.bottom <= 64)
+    assertTrue(action.height >= 48)
   }
 
   @Test fun clearingSnapshotRepaintsBothExistingWidgets() {
     WidgetStore.write(context, data())
     val shadow = shadowOf(manager)
     val task = shadow.createWidget(TasksWidgetProvider::class.java, R.layout.office_widget)
-    val party = shadow.createWidget(PartyWidgetProvider::class.java, R.layout.office_widget)
+    val party = shadow.createWidget(PartyWidgetProvider::class.java, R.layout.office_party_search)
     WidgetStore.clear(context)
     WidgetStore.update(context)
-    for (id in listOf(task, party)) assertEquals("Set up widgets", text(shadow.getViewFor(id), R.id.widget_open))
+    assertEquals(View.GONE, shadow.getViewFor(task).findViewById<View>(R.id.widget_row1).visibility)
+    assertEquals("Search party…", text(shadow.getViewFor(party), R.id.widget_search_bar))
     WidgetStore.write(context, data())
     WidgetStore.update(context)
-    assertEquals(View.VISIBLE, shadow.getViewFor(party).findViewById<View>(R.id.widget_row1).visibility)
-    assertEquals("Statement as of 2026-11-07", text(shadow.getViewFor(party), R.id.widget_row1))
+    assertEquals(View.VISIBLE, shadow.getViewFor(task).findViewById<View>(R.id.widget_row1).visibility)
+    assertTrue(text(shadow.getViewFor(task), R.id.widget_row1).contains("Dispatch"))
   }
 }

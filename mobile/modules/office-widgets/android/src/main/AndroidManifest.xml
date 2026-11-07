@@ -4,7 +4,7 @@
       <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/office_tasks_widget" />
     </receiver>
-    <receiver android:name=".PartyWidgetProvider" android:exported="false" android:label="Party outstanding">
+    <receiver android:name=".PartyWidgetProvider" android:exported="false" android:label="Party statement search">
       <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/office_party_widget" />
     </receiver>

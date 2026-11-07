@@ -4,5 +4,6 @@
   <string name="office_widget_setup_copy">Open the app to set up your widget</string>
   <string name="office_widget_open_app">Open app</string>
   <string name="office_tasks_widget_description">Your next office tasks. Tap to manage tasks in the app.</string>
-  <string name="office_party_widget_description">The last saved statement for your chosen party. Tap to open it.</string>
+  <string name="office_party_widget_description">Search any party and share its outstanding statement.</string>
+  <string name="office_widget_search_party">Search party…</string>
 </resources>
