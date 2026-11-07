@@ -87,6 +87,21 @@ PDF actions are Open, Download and Share. Sharing opens the phone's share sheet,
 where WhatsApp and other apps are available. The separate Send to my WhatsApp
 button has been removed; the office bill-sending tool remains available.
 
+## Confirmation sheets
+
+In-app confirmations and acknowledgements use a shared white bottom sheet with
+rounded upper corners, navy action buttons, comfortable spacing and a dimmed
+backdrop. Destructive actions use red. The main action comes first visually and
+in accessibility order, followed by the safe cancellation option. Long messages
+scroll and the sheet leaves room for the phone's navigation area. Reduced-motion
+settings disable its slide animation.
+
+Back and backdrop dismissal only cancel; they never approve task completion,
+discarding edits, sending documents or disconnecting the phone. Repeated taps
+cannot invoke an action twice. Multiple incoming messages are queued. Task
+completion from the home-screen widget uses the same light rounded-sheet design
+and retains the selected task version and repeat explanation.
+
 ## Design references
 
 Applied guidance from [Android widget design](https://developer.android.com/design/ui/mobile/guides/widgets)
