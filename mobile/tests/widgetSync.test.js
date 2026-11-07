@@ -27,8 +27,8 @@ mock.module("expo-background-task", () => ({
   registerTaskAsync: async () => { registered = true; },
   unregisterTaskAsync: async () => { registered = false; },
 }));
-const { clearHomeWidgets, refreshHomeWidgets, saveWidgetSettings, pinHomeWidget } = await import("../src/homeWidgets");
-const config = { enabled: true, scope: "mine", party: { id: "party", name: "Test party" } };
+const { clearHomeWidgets, refreshHomeWidgets, saveWidgetSettings, pinHomeWidget, widgetSettings } = await import("../src/homeWidgets");
+const config = { scope: "mine" };
 function setup() {
   values.set("office-home-widgets-v1", JSON.stringify(config));
   values.set("office-session-v1", JSON.stringify({ url: "https://office.invalid", token: "private-test-token", expires_at: "2099-01-01" }));
@@ -49,7 +49,7 @@ test("widget background refresh makes only authenticated reads and never request
   expect(registered).toBe(true);
   expect(await worker()).toBe(1);
   expect(calls.every((call) => call.method === "GET")).toBe(true);
-  expect(calls.map((call) => call.url.replace("https://office.invalid/mobile/v1", ""))).toEqual(["/me", "/tasks", "/reports", "/me", "/tasks", "/reports"]);
+  expect(calls.map((call) => call.url.replace("https://office.invalid/mobile/v1", ""))).toEqual(["/me", "/tasks", "/me", "/tasks"]);
   expect(JSON.stringify(snapshots)).not.toContain("private-test-token");
 });
 test("expired or revoked access clears displayed data and stops widget reads", async () => {
@@ -98,8 +98,16 @@ test("logout during a slow request cannot republish the previous account's data"
 test("simultaneous foreground and background refreshes share one read", async () => {
   setup();
   await Promise.all([refreshHomeWidgets(), refreshHomeWidgets(), refreshHomeWidgets()]);
-  expect(calls).toHaveLength(3);
+  expect(calls).toHaveLength(2);
   expect(snapshots).toHaveLength(1);
+});
+test("a task change waits for an older read then fetches fresh data", async () => {
+  setup();
+  const older = refreshHomeWidgets();
+  const changed = refreshHomeWidgets(true);
+  await Promise.all([older, changed]);
+  expect(calls).toHaveLength(4);
+  expect(snapshots).toHaveLength(2);
 });
 test("reconfiguring an existing widget updates it without prompting for a duplicate", async () => {
   existingWidget = true;
@@ -124,4 +132,20 @@ test("an old account's late revocation response does not clear a newly paired ac
   await expect(pending).rejects.toThrow("Access expired");
   expect(clears).toBe(0);
   expect(values.has("office-home-widgets-v1")).toBe(true);
+});
+test("a signed-in phone loads all office tasks without any saved widget settings", async () => {
+  setup();
+  values.delete("office-home-widgets-v1");
+  await refreshHomeWidgets();
+  expect(registered).toBe(true);
+  expect(snapshots[0].taskHeading).toBe("Office tasks");
+  expect(calls).toHaveLength(2);
+});
+test("unused legacy setup and fixed-party preferences are removed automatically", async () => {
+  setup();
+  for (const enabled of [false, true]) {
+    values.set("office-home-widgets-v1", JSON.stringify({ enabled, scope: "mine", party: { id: "old", name: "Old choice" } }));
+    expect(await widgetSettings()).toEqual({ scope: "all" });
+    expect(JSON.parse(values.get("office-home-widgets-v1"))).toEqual({ scope: "all" });
+  }
 });

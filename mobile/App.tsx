@@ -21,9 +21,9 @@ import OfficeToolsScreen, { OfficeToolsHandle } from "./src/OfficeToolsScreen";
 import InviteManager from "./src/InviteManager";
 import TasksScreen, { TasksHandle } from "./src/TasksScreen";
 import DateField from "./src/DateField";
-import WidgetSettingsCard, { selectWidgetParty } from "./src/WidgetSettingsCard";
-import { clearHomeWidgets, pinHomeWidget, refreshHomeWidgets, widgetSettings, widgetsAvailable } from "./src/homeWidgets";
-import { widgetRoute } from "./src/widgetModel";
+import WidgetSettingsCard from "./src/WidgetSettingsCard";
+import { clearHomeWidgets, refreshHomeWidgets, widgetSettings } from "./src/homeWidgets";
+import { latestPartyStatement, widgetRoute } from "./src/widgetModel";
 import NavigationDrawer, { NavigationScreen } from "./src/NavigationDrawer";
 import AllOutstandingScreen, {
   AllOutstandingHandle,
@@ -90,6 +90,8 @@ function OfficeApp() {
     [busy, setBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [widgetIntent, setWidgetIntent] = useState<ReturnType<typeof widgetRoute>>(null);
+  const partySearchInput = useRef<React.ComponentRef<typeof TextInput>>(null);
+  const [widgetSearchFocus, setWidgetSearchFocus] = useState(0);
   const [query, setQuery] = useState(""),
     [parties, setParties] = useState<Party[]>([]),
     [searching, setSearching] = useState(false),
@@ -199,25 +201,15 @@ function OfficeApp() {
     if (route === "setup") { accountFrom.current = "home"; setScreen("account"); return; }
     statementFrom.current = "home";
     if (activeReport) { setScreen("outstanding"); return; }
-    void action(async () => {
-      const selected = (await widgetSettings()).party;
-      if (currentSession.current?.token !== session.token || !mounted.current) return;
-      if (!selected) { setScreen("account"); return; }
-      setParty(selected);
-      setReport(null);
-      setScreen("outstanding");
-      const rows = await api<Report[]>("/reports");
-      if (currentSession.current?.token !== session.token || !mounted.current) return;
-      setHistory(rows);
-      const saved = rows.filter((row) => row.party_id === selected.id && row.status === "ready" &&
-        Date.parse(row.finished_at ?? "") + 48 * 3600000 > Date.now())
-        .sort((a, b) => Date.parse(b.finished_at!) - Date.parse(a.finished_at!))[0];
-      if (saved) setReport(saved);
-    });
+    setParty(null); setReport(null); setQuery(""); setAsOf(todayIndia());
+    setScreen("outstanding");
+    setWidgetSearchFocus((value) => value + 1);
   }, [session, widgetIntent, restoring]);
   useEffect(() => {
-    if (report?.status === "ready") void refreshHomeWidgets().catch(() => {});
-  }, [report?.id, report?.status]);
+    if (!widgetSearchFocus || screen !== "outstanding" || party || report) return;
+    const timer = setTimeout(() => partySearchInput.current?.focus(), 250);
+    return () => clearTimeout(timer);
+  }, [widgetSearchFocus, screen, party, report]);
   useEffect(() => {
     if (!session) return;
     void api<Person>("/me")
@@ -292,6 +284,17 @@ function OfficeApp() {
     } finally {
       if (mounted.current) setBusy(false);
     }
+  }
+  function choosePartyForStatement(selected: Party) {
+    Keyboard.dismiss();
+    const token = session?.token;
+    setParty(selected); setReport(null);
+    void action(async () => {
+      const rows = await api<Report[]>("/reports");
+      if (!mounted.current || currentSession.current?.token !== token) return;
+      setHistory(rows);
+      setReport(latestPartyStatement(rows, selected.id));
+    });
   }
   async function pairPhone() {
     await action(async () => {
@@ -505,16 +508,23 @@ function OfficeApp() {
         .slice(0, 140) || "Statement") + ".pdf";
     return (
       <View style={styles.actions}>
+        {kind === "reports" && <>
+          <Button title="Share PDF" icon="whatsapp" green disabled={busy}
+            onPress={() => void getPdf(kind, id, "share", filename)} />
+          <Text style={styles.noteText}>Choose WhatsApp or another app in your phone’s sharing menu.</Text>
+        </>}
         <Button
           title="Open PDF"
           icon="file"
+          secondary={kind === "reports"}
           disabled={busy}
           onPress={() => void getPdf(kind, id, "open", filename)}
         />
         <Button
           title="Send to my WhatsApp"
           icon="whatsapp"
-          green
+          green={kind !== "reports"}
+          secondary={kind === "reports"}
           disabled={busy || !person}
           onPress={() => sendToMe(kind, id)}
         />
@@ -524,7 +534,7 @@ function OfficeApp() {
               ["save", "download", "Download"],
               ["share", "share", "Share"],
             ] as const
-          ).map(([mode, icon, title]) => (
+          ).filter(([mode]) => kind !== "reports" || mode !== "share").map(([mode, icon, title]) => (
             <Pressable
               key={mode}
               accessibilityRole="button"
@@ -1031,6 +1041,7 @@ function OfficeApp() {
                         <View style={styles.searchBox}>
                           <Icon name="search" size={20} color={palette.muted} />
                           <TextInput
+                            ref={partySearchInput}
                             style={styles.searchInput}
                             placeholder="Search party name…"
                             placeholderTextColor={palette.muted}
@@ -1097,17 +1108,6 @@ function OfficeApp() {
                           disabled={busy}
                           onPress={() => void generate()}
                         />
-                        {widgetsAvailable && <Button
-                          title="Use party for home widget"
-                          secondary disabled={busy}
-                          onPress={() => void action(async () => {
-                            await selectWidgetParty(party);
-                            const result = await pinHomeWidget("party");
-                            Alert.alert("Party widget", result === "updated" ? "Your existing party widget now shows this party." : result === "requested"
-                              ? "Confirm Add on your home-screen prompt. The widget shows this party’s latest saved statement."
-                              : "Long-press an empty area of your home screen → Widgets → H.S. Traders Office → Party outstanding.");
-                          })}
-                        />}
                         <Pressable
                           accessibilityRole="button"
                           disabled={busy}
@@ -1121,7 +1121,7 @@ function OfficeApp() {
                       </View>
                     )}
                     {report && reportCard(report)}
-                    {report?.status === "ready" && party?.id === report.party_id && (
+                    {party && report?.status === "ready" && party.id === report.party_id && (
                       <Button title="New statement for this party" secondary disabled={busy}
                         onPress={() => { setReport(null); setAsOf(todayIndia()); }} />
                     )}
@@ -1147,10 +1147,7 @@ function OfficeApp() {
                   <Pressable
                     accessibilityRole="button"
                     disabled={busy}
-                    onPress={() => {
-                      setParty(item);
-                      setReport(null);
-                    }}
+                    onPress={() => choosePartyForStatement(item)}
                     style={({ pressed }) => [
                       styles.party,
                       pressed && styles.pressed,
@@ -1414,13 +1411,7 @@ function OfficeApp() {
                   />
                 </View>
                 {person?.can_invite_users && <InviteManager api={api} />}
-                <WidgetSettingsCard chooseParty={() => {
-                  if (activeReport) {
-                    Alert.alert("Statement in progress", "Wait for your current statement before choosing a different party.");
-                    return;
-                  }
-                  setParty(null); setReport(null); setQuery(""); setScreen("outstanding");
-                }} />
+                <WidgetSettingsCard />
                 <Note>
                   Keep Tailscale connected on your phone. You can use the app
                   from anywhere with internet access.
@@ -1473,7 +1464,7 @@ function OfficeApp() {
                   <Text style={styles.dangerText}>Disconnect this phone</Text>
                 </Pressable>
                 <Text style={[styles.noteText, { textAlign: "center" }]}>
-                  H.S. Traders Office · Version 1.5.0
+                  H.S. Traders Office · Version 1.5.1
                 </Text>
               </ScrollView>
             )}
