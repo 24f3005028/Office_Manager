@@ -134,7 +134,7 @@ The private mobile app includes party statements, saved bill PDFs, office tools 
 shared tasks. Its home-screen task widget supports completion, adding a task and
 manual refresh; the party widget opens search directly. See
 [mobile design and widget behaviour](docs/mobile-design.md) and
-[Android release 1.7.0](docs/android-release-1.7.0.md). Copy account supports custom
+[Android release 1.7.1](docs/android-release-1.7.1.md). Copy account supports custom
 ledger dates and account-group filters. Group closing balances show each account
 and debit/credit totals, with PDF sharing. Open PDF uses a PDF viewer,
 preferring Google Drive on Android, instead of print preview.

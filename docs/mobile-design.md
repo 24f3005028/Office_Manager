@@ -62,7 +62,7 @@ list shows each nonzero account, debit and credit totals, search and pagination.
 Tapping an account opens its Copy account form. A PDF uses the same reconciled
 rows as the in-app view.
 
-Creating either report requires an explicit confirmation. Both use the existing
+Tapping Create report submits directly, without a second mobile confirmation. Both use the existing
 five-second office warning and shared BUSY desktop lock. Progress reads never
 start exports. BUSY report settings are set and checked before export, and group
 totals must reconcile before a result becomes available. Temporary Excel files
@@ -73,6 +73,19 @@ The catalogue stores only names and group membership in the dashboard's own
 database. Import it with `python -m scripts.import_mobile_accounts <xlsx-path>`
 from the backend directory; the existing trade-party list remains compatible.
 BUSY's database is never accessed.
+
+## Loading and sharing
+
+All in-app loading indicators use the same indeterminate yarn-style progress
+bar: diagonal strands travel horizontally along a track. Long operations show
+elapsed time after five seconds, alongside the actual report status. No estimated
+completion percentage is displayed. Reduced-motion settings disable the animation.
+Task refresh, account searches, document requests, office work, invites and widget
+actions share this component. Native launch remains the branded splash screen.
+
+PDF actions are Open, Download and Share. Sharing opens the phone's share sheet,
+where WhatsApp and other apps are available. The separate Send to my WhatsApp
+button has been removed; the office bill-sending tool remains available.
 
 ## Design references
 
