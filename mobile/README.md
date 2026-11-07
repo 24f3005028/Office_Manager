@@ -62,7 +62,44 @@ merger constructors under R8 full mode. `Build-Android.ps1` attaches these rules
 after either prebuild or `-SkipPrebuild`, and fails if the generated ProGuard
 configuration no longer matches. Keep release optimization enabled.
 
-## Current verification limits
+## Android home-screen widgets (1.5)
+
+- **Office tasks** shows the next due open tasks, defaulting to your assignments.
+  Switch to all office tasks under **Account & connection → Home-screen widgets**.
+  It shows up to three rows when enlarged, with the open/overdue counts and last
+  refresh time. Tap it to manage tasks; task completion still uses the app's
+  confirmation and handles repeating tasks as before.
+- **Party outstanding** shows one chosen party's latest completed saved statement,
+  pending amount and statement date. Choose the party using the existing search,
+  then **Use party for home widget**. All party widgets on this phone share that choice.
+  Tapping opens the saved report, or the selected party's create-statement screen
+  when no available report exists. It never creates a report on its own.
+- Add either widget from the app, or long-press an empty home-screen area → Widgets
+  → H.S. Traders Office. Android's launcher must confirm adding a widget. Older
+  launchers may require the long-press method. Resize by long-pressing the widget.
+- Widgets must be enabled in the app. Updates read only `/me`, `/tasks`, `/reports`
+  using the existing session and private Tailscale connection. Foreground changes
+  refresh them; Android background updates are best effort, 15 minutes or longer.
+  BUSY exports, Pouncha sync, sends and task writes never run from this worker.
+- Offline reads preserve labelled saved data instead of inventing a zero balance.
+  Snapshot visibility is bounded by session expiry or 24 hours without refresh.
+  Party report data also stops displaying after its existing 48-hour availability.
+  Android refresh timing can delay repainting until its next widget update.
+- Disconnecting, expired access or an observed server revocation clears widget
+  snapshots and stops their reader. Turning widgets off clears displayed data
+  without disabling task notifications. Widget text is visible on the unlocked
+  home screen; enable it only if that is acceptable on the phone.
+- The local Expo module under `modules/office-widgets` uses Android RemoteViews.
+  It stores no tokens, phone numbers or PDFs, and keeps its private snapshot in
+  Android's no-backup directory. Native source survives Expo prebuild; generated
+  module build outputs are ignored. No extra native library is required.
+
+Run `scripts/Test-AndroidWidgets.ps1` after generating the native project to check
+actual RemoteViews inflation, resizing, expiry and logout clearing under Android
+framework tests, plus Android lint. Robolectric is a test-only dependency and is
+not packaged in the APK. These checks supplement a real launcher/phone check.
+
+## Connection and report verification
 
 If the phone reports that the office is unavailable, run `Start-Office.cmd` on the office computer and use **Office → Send bills → Check office connection** (or reopen the Office tab in older versions). The private URL can return 502 while the local services are stopped. Starting Tailscale alone does not start the dashboard services. Version 1.2.2 handles empty/truncated responses without exposing JSON parsing errors and never automatically repeats unconfirmed sends or updates. Run `bun run test` for the client response-handling regression tests.
 
