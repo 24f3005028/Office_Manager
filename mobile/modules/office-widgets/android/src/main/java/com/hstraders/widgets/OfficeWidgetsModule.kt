@@ -20,16 +20,22 @@ import java.io.File
 class OfficeWidgetsModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("OfficeWidgets")
-    AsyncFunction("saveSnapshot") { json: String ->
-      require(json.length <= 64000) { "Widget snapshot is too large" }
+    AsyncFunction("saveSnapshot") { json: String, connection: String ->
+      require(json.length <= 64000 && connection.length <= 8192) { "Widget snapshot is too large" }
       val context = requireNotNull(appContext.reactContext)
       val data = JSONObject(json)
-      WidgetStore.write(context, data)
+      synchronized(WidgetStore) {
+        WidgetConnection.write(context, JSONObject(connection))
+        WidgetStore.write(context, data)
+      }
       WidgetStore.update(context)
     }
     AsyncFunction("clearSnapshot") {
       val context = requireNotNull(appContext.reactContext)
-      WidgetStore.clear(context)
+      synchronized(WidgetStore) {
+        WidgetConnection.clear(context)
+        WidgetStore.clear(context)
+      }
       WidgetStore.update(context)
     }
     AsyncFunction("hasWidgets") { kind: String ->
@@ -52,6 +58,7 @@ class OfficeWidgetsModule : Module() {
 internal object WidgetStore {
   private fun file(context: Context) = AtomicFile(File(context.noBackupFilesDir, "office-widgets.json"))
   @Synchronized fun write(context: Context, data: JSONObject) {
+    data.put("generation", System.nanoTime().toString())
     data.remove("party") // Remove the obsolete fixed-party balance from legacy snapshots.
     val file = file(context)
     val stream = file.startWrite()
@@ -64,7 +71,10 @@ internal object WidgetStore {
     }
   }
   @Synchronized fun clear(context: Context) { file(context).delete() }
-  @Synchronized private fun read(context: Context): JSONObject? = try {
+  @Synchronized fun writeIfCurrent(context: Context, data: JSONObject, generation: String) {
+    if (read(context)?.optString("generation") == generation) write(context, data)
+  }
+  @Synchronized fun read(context: Context): JSONObject? = try {
     file(context).openRead().use { JSONObject(it.readBytes().toString(Charsets.UTF_8)) }
       .takeIf { it.optLong("expiresAt") > System.currentTimeMillis() }
   } catch (_: Exception) { null }
@@ -91,26 +101,42 @@ internal object WidgetStore {
     val data = read(context)
     val views = RemoteViews(context.packageName, R.layout.office_widget)
     val height = manager.getAppWidgetOptions(id).getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 220)
-    val rowLimit = if (height >= 280) 3 else if (height >= 240) 2 else if (height >= 200) 1 else 0
+    val rowLimit = if (height >= 330) 3 else if (height >= 275) 2 else if (height >= 200) 1 else 0
     views.setTextViewText(R.id.widget_title, data?.optString("taskHeading", "Office tasks") ?: "Office tasks")
     if (data == null) {
       views.setTextViewText(R.id.widget_summary, "Open the app to load your office tasks")
       views.setTextViewText(R.id.widget_updated, "Tasks update automatically after signing in")
-      for (row in listOf(R.id.widget_row1, R.id.widget_row2, R.id.widget_row3)) views.setViewVisibility(row, View.GONE)
+      for (row in listOf(R.id.widget_task1, R.id.widget_task2, R.id.widget_task3, R.id.widget_row1, R.id.widget_row2, R.id.widget_row3)) views.setViewVisibility(row, View.GONE)
     } else {
-      views.setTextViewText(R.id.widget_updated, data.optString("updatedLabel", "Saved data"))
+      views.setTextViewText(R.id.widget_updated, data.optString("actionMessage", data.optString("updatedLabel", "Saved data")))
       views.setTextViewText(R.id.widget_summary, data.optString("taskSummary"))
       val rows = data.optJSONArray("tasks")
       for ((index, view) in listOf(R.id.widget_row1, R.id.widget_row2, R.id.widget_row3).withIndex()) {
         val text = rows?.optString(index, "") ?: ""
         views.setTextViewText(view, text)
-        views.setViewVisibility(view, if (text.isEmpty() || index >= rowLimit) View.GONE else View.VISIBLE)
+        val visible = text.isNotEmpty() && index < rowLimit
+        views.setViewVisibility(listOf(R.id.widget_task1, R.id.widget_task2, R.id.widget_task3)[index], if (visible) View.VISIBLE else View.GONE)
+        views.setViewVisibility(view, if (visible) View.VISIBLE else View.GONE)
+        views.setOnClickPendingIntent(view, openApp(context, id, "tasks"))
+        val task = data.optJSONArray("taskRows")?.optJSONObject(index)
+        val check = listOf(R.id.widget_done1, R.id.widget_done2, R.id.widget_done3)[index]
+        views.setViewVisibility(check, if (task == null) View.GONE else View.VISIBLE)
+        if (task != null) {
+          views.setContentDescription(check, "Mark ${task.optString("title")} done")
+          val intent = Intent(context, WidgetCompleteActivity::class.java)
+            .setData(Uri.parse("hstraders-office://task-action/${task.getString("id")}/${task.getInt("version")}"))
+            .putExtra("taskId", task.getString("id")).putExtra("version", task.getInt("version"))
+          views.setOnClickPendingIntent(check, PendingIntent.getActivity(context, id, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+        }
       }
     }
     views.setTextViewText(R.id.widget_open, "Open tasks")
     val pending = openApp(context, id, "tasks")
     views.setOnClickPendingIntent(R.id.widget_root, pending)
     views.setOnClickPendingIntent(R.id.widget_open, pending)
+    views.setOnClickPendingIntent(R.id.widget_add, openApp(context, id, "new-task"))
+    views.setOnClickPendingIntent(R.id.widget_refresh, PendingIntent.getBroadcast(context, id,
+      Intent(context, WidgetRefreshReceiver::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
     manager.updateAppWidget(id, views)
   }
 

@@ -22,6 +22,10 @@ android {
 }
 
 dependencies {
+  implementation 'androidx.work:work-runtime-ktx:2.10.5'
+  // Expo 58 autolinks Notifications as a prebuilt local Maven artifact.
+  def notificationsVersion = new groovy.json.JsonSlurper().parse(rootProject.file('../node_modules/expo-notifications/package.json')).version
+  implementation "host.exp.exponent:expo.modules.notifications:${notificationsVersion}"
   testImplementation 'junit:junit:4.13.2'
   testImplementation 'org.robolectric:robolectric:4.17'
 }

@@ -6,4 +6,8 @@
   <string name="office_tasks_widget_description">Your next office tasks. Tap to manage tasks in the app.</string>
   <string name="office_party_widget_description">Search any party and share its outstanding statement.</string>
   <string name="office_widget_search_party">Search party…</string>
+  <string name="office_widget_mark_done">Mark task done</string>
+  <string name="office_widget_add">+ Add task</string>
+  <string name="office_widget_open_tasks">Open tasks</string>
+  <string name="office_widget_refresh">Refresh tasks</string>
 </resources>

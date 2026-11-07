@@ -4,3 +4,4 @@
 # https://github.com/expo/expo/issues/51337
 -keep class * extends androidx.room.RoomDatabase { <init>(); }
 -keep class * extends androidx.work.InputMerger { <init>(); }
+-keep class com.hstraders.widgets.WidgetTaskWorker { public <init>(android.content.Context, androidx.work.WorkerParameters); }
