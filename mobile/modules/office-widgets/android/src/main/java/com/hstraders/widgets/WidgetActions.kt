@@ -1,7 +1,6 @@
 package com.hstraders.widgets
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -183,9 +182,8 @@ class WidgetCompleteActivity : Activity() {
     val task = rows?.let { (0 until it.length()).map { n -> it.getJSONObject(n) }.find { row -> row.optString("id") == id && row.optInt("version") == version } }
     if (task == null || WidgetConnection.read(this) == null) { finish(); return }
     val repeat = task.optString("repeat_rule", "none")
-    AlertDialog.Builder(this).setTitle("Mark task done?").setMessage(task.getString("title") + if (repeat != "none") "\nThe next $repeat occurrence will stay open." else "")
-      .setNegativeButton("Cancel") { _, _ -> finish() }
-      .setPositiveButton("Mark done") { _, _ -> WidgetTaskWorker.enqueue(this, id, version); finish() }
-      .setOnCancelListener { finish() }.show()
+    TaskConfirmation.show(this, task.getString("title"), repeat) {
+      WidgetTaskWorker.enqueue(this, id, version)
+    }
   }
 }
