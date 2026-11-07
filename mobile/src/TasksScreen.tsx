@@ -18,6 +18,7 @@ import {
 } from "react-native";
 import { Person, todayIndia } from "./api";
 import DateField from "./DateField";
+import { pinHomeWidget, refreshHomeWidgets, saveWidgetSettings, widgetSettings, widgetsAvailable } from "./homeWidgets";
 import {
   OfficeTask,
   TaskPerson,
@@ -35,7 +36,7 @@ import {
 import { Button, Heading, Icon, Note, palette, styles } from "./ui";
 
 type Api = <T>(path: string, body?: unknown) => Promise<T>;
-export type TasksHandle = { back: () => boolean };
+export type TasksHandle = { back: () => boolean; showOpen: (scope: "mine" | "all") => void };
 export default forwardRef<
   TasksHandle,
   { api: Api; person: Person | null; visible: boolean }
@@ -76,6 +77,7 @@ export default forwardRef<
       reminderStatus(),
     ]);
     setTasks(rows);
+    void refreshHomeWidgets().catch(() => {});
     setPeople(members);
     setEnabled(on);
     try {
@@ -102,6 +104,7 @@ export default forwardRef<
   useImperativeHandle(
     ref,
     () => ({
+      showOpen: (scope) => setFilter(scope),
       back: () => {
         if (busy) return true;
         if (form) {
@@ -230,6 +233,12 @@ export default forwardRef<
       )}
       {notice !== "" && <Note icon="info">{notice}</Note>}
       {busy && <ActivityIndicator color={palette.blue} />}
+      {!form && widgetsAvailable && <Button title="Add tasks home widget" secondary disabled={busy} onPress={() => void run(async () => {
+        await saveWidgetSettings({ ...await widgetSettings(), enabled: true });
+        const result = await pinHomeWidget("tasks");
+        setNotice(result === "updated" ? "Your existing tasks widget is updated." : result === "requested" ? "Confirm Add on your home-screen prompt. Change My tasks / All tasks under Account & connection → Home-screen widgets."
+          : "Long-press your home screen → Widgets → H.S. Traders Office → Office tasks.");
+      })} />}
       {form ? (
         <View style={styles.card}>
           <View>

@@ -2,13 +2,14 @@
   "expo": {
     "name": "H.S. Traders Office",
     "slug": "hs-traders-office",
-    "version": "1.4.1",
+    "version": "1.5.0",
+    "scheme": "hstraders-office",
     "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "android": {
       "package": "com.hstraders.office",
-      "versionCode": 8,
+      "versionCode": 9,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"

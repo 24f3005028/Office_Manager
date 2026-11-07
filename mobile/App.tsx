@@ -7,6 +7,7 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Keyboard,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -20,6 +21,9 @@ import OfficeToolsScreen, { OfficeToolsHandle } from "./src/OfficeToolsScreen";
 import InviteManager from "./src/InviteManager";
 import TasksScreen, { TasksHandle } from "./src/TasksScreen";
 import DateField from "./src/DateField";
+import WidgetSettingsCard, { selectWidgetParty } from "./src/WidgetSettingsCard";
+import { clearHomeWidgets, pinHomeWidget, refreshHomeWidgets, widgetSettings, widgetsAvailable } from "./src/homeWidgets";
+import { widgetRoute } from "./src/widgetModel";
 import NavigationDrawer, { NavigationScreen } from "./src/NavigationDrawer";
 import AllOutstandingScreen, {
   AllOutstandingHandle,
@@ -74,6 +78,8 @@ const errorText = (error: unknown) =>
 function OfficeApp() {
   const [session, setSession] = useState<Session | null>(null),
     [restoring, setRestoring] = useState(true);
+  const currentSession = useRef(session);
+  currentSession.current = session;
   const [url, setUrl] = useState(process.env.EXPO_PUBLIC_OFFICE_URL ?? ""),
     [code, setCode] = useState(""),
     [countryCode, setCountryCode] = useState("91"),
@@ -83,6 +89,7 @@ function OfficeApp() {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [widgetIntent, setWidgetIntent] = useState<ReturnType<typeof widgetRoute>>(null);
   const [query, setQuery] = useState(""),
     [parties, setParties] = useState<Party[]>([]),
     [searching, setSearching] = useState(false),
@@ -126,10 +133,14 @@ function OfficeApp() {
   useEffect(() => {
     mounted.current = true;
     void SecureStore.getItemAsync(SESSION_KEY)
-      .then((value) => {
+      .then(async (value) => {
         if (value) setSession(JSON.parse(value));
+        else await clearHomeWidgets();
       })
-      .catch(() => setError("Please connect this phone again."))
+      .catch(() => {
+        void clearHomeWidgets().catch(() => {});
+        setError("Please connect this phone again.");
+      })
       .finally(() => setRestoring(false));
     return () => {
       mounted.current = false;
@@ -138,8 +149,12 @@ function OfficeApp() {
   useEffect(() => {
     if (!session) return;
     void syncTaskReminders().catch(() => {});
+    void refreshHomeWidgets().catch(() => {});
     const foreground = AppState.addEventListener("change", (state) => {
-      if (state === "active") void syncTaskReminders().catch(() => {});
+      if (state === "active") {
+        void syncTaskReminders().catch(() => {});
+        void refreshHomeWidgets().catch(() => {});
+      }
     });
     if (Platform.OS === "web") return () => foreground.remove();
     const showTasks = () => {
@@ -162,6 +177,47 @@ function OfficeApp() {
       response.remove();
     };
   }, [session]);
+  useEffect(() => {
+    void Linking.getInitialURL().then((url) => setWidgetIntent(widgetRoute(url))).catch(() => {});
+    const subscription = Linking.addEventListener("url", ({ url }) => {
+      const route = widgetRoute(url);
+      if (route) setWidgetIntent(route);
+    });
+    return () => subscription.remove();
+  }, []);
+  useEffect(() => {
+    if (!session || !widgetIntent || restoring) return;
+    const route = widgetIntent;
+    setWidgetIntent(null);
+    setMenuOpen(false);
+    if (route === "tasks") {
+      tasksFrom.current = "home";
+      setScreen("tasks");
+      void widgetSettings().then((settings) => taskScreen.current?.showOpen(settings.scope));
+      return;
+    }
+    if (route === "setup") { accountFrom.current = "home"; setScreen("account"); return; }
+    statementFrom.current = "home";
+    if (activeReport) { setScreen("outstanding"); return; }
+    void action(async () => {
+      const selected = (await widgetSettings()).party;
+      if (currentSession.current?.token !== session.token || !mounted.current) return;
+      if (!selected) { setScreen("account"); return; }
+      setParty(selected);
+      setReport(null);
+      setScreen("outstanding");
+      const rows = await api<Report[]>("/reports");
+      if (currentSession.current?.token !== session.token || !mounted.current) return;
+      setHistory(rows);
+      const saved = rows.filter((row) => row.party_id === selected.id && row.status === "ready" &&
+        Date.parse(row.finished_at ?? "") + 48 * 3600000 > Date.now())
+        .sort((a, b) => Date.parse(b.finished_at!) - Date.parse(a.finished_at!))[0];
+      if (saved) setReport(saved);
+    });
+  }, [session, widgetIntent, restoring]);
+  useEffect(() => {
+    if (report?.status === "ready") void refreshHomeWidgets().catch(() => {});
+  }, [report?.id, report?.status]);
   useEffect(() => {
     if (!session) return;
     void api<Person>("/me")
@@ -1041,6 +1097,17 @@ function OfficeApp() {
                           disabled={busy}
                           onPress={() => void generate()}
                         />
+                        {widgetsAvailable && <Button
+                          title="Use party for home widget"
+                          secondary disabled={busy}
+                          onPress={() => void action(async () => {
+                            await selectWidgetParty(party);
+                            const result = await pinHomeWidget("party");
+                            Alert.alert("Party widget", result === "updated" ? "Your existing party widget now shows this party." : result === "requested"
+                              ? "Confirm Add on your home-screen prompt. The widget shows this party’s latest saved statement."
+                              : "Long-press an empty area of your home screen → Widgets → H.S. Traders Office → Party outstanding.");
+                          })}
+                        />}
                         <Pressable
                           accessibilityRole="button"
                           disabled={busy}
@@ -1054,6 +1121,10 @@ function OfficeApp() {
                       </View>
                     )}
                     {report && reportCard(report)}
+                    {report?.status === "ready" && party?.id === report.party_id && (
+                      <Button title="New statement for this party" secondary disabled={busy}
+                        onPress={() => { setReport(null); setAsOf(todayIndia()); }} />
+                    )}
                     {report && (
                       <Button
                         title="Get another statement"
@@ -1343,6 +1414,13 @@ function OfficeApp() {
                   />
                 </View>
                 {person?.can_invite_users && <InviteManager api={api} />}
+                <WidgetSettingsCard chooseParty={() => {
+                  if (activeReport) {
+                    Alert.alert("Statement in progress", "Wait for your current statement before choosing a different party.");
+                    return;
+                  }
+                  setParty(null); setReport(null); setQuery(""); setScreen("outstanding");
+                }} />
                 <Note>
                   Keep Tailscale connected on your phone. You can use the app
                   from anywhere with internet access.
@@ -1375,6 +1453,7 @@ function OfficeApp() {
                               try {
                                 await api("/logout", {});
                               } finally {
+                                await clearHomeWidgets().catch(() => {});
                                 await stopTaskReminders().catch(() => {});
                                 await SecureStore.deleteItemAsync(SESSION_KEY);
                                 setSession(null);
@@ -1394,7 +1473,7 @@ function OfficeApp() {
                   <Text style={styles.dangerText}>Disconnect this phone</Text>
                 </Pressable>
                 <Text style={[styles.noteText, { textAlign: "center" }]}>
-                  H.S. Traders Office · Version 1.4.1
+                  H.S. Traders Office · Version 1.5.0
                 </Text>
               </ScrollView>
             )}
