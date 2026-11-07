@@ -48,8 +48,19 @@ PDFs and remain in private storage excluded from Android backups.
   logic is changed by this release.
 
 Final checks: 34 mobile tests and six native widget tests passed; TypeScript,
-Android lint, release build and v2 signing verification passed. Wireless debugging
-was no longer connected for a device installation/launcher check of this APK.
+Android lint, release build and v2 signing verification passed.
+
+Physical phone verification completed on 7 November 2026 over wireless debugging:
+
+- Updated the existing app to versionCode 10 without clearing data; sign-in remained intact.
+- Cold start reached React Native, stayed running and produced no fresh native crash.
+- The existing Office tasks widget refreshed automatically. Its empty state matched
+  the authenticated task list with All open selected, without widget configuration.
+- The party shortcut opened the search field with focus and the keyboard visible.
+- The owner added the search bar and confirmed it works. Android's launcher reported
+  both task and party-search widget instances bound to the installed app.
+- No BUSY export or WhatsApp message was triggered by these checks. Live PDF sharing
+  and fresh statement generation were not exercised in this device verification.
 
 APK SHA-256: `0a20e6495b17db48405b9c874a611381872b62f5ede09c5697bdbedb67861607`.
 APK size: 35,491,172 bytes; ARM64/ARMv7 and versionCode 10 verified.
