@@ -201,17 +201,14 @@ class OutstandingExporter(BusyExporter):
                 "Text File - Fixed Width",
             }
         ]
-        if len(format_fields) != 1:
+        if len(format_fields) != 1 or format_fields[0] is not fields[0]:
             raise SyncError("BUSY's export format selector is unavailable or ambiguous.")
         format_fields[0].type_keys("p{ENTER}", pause=0.2)
         # Changing format disables Excel-only fields. Read the layout again.
         target = self._wait(
             main,
             desktop,
-            lambda root: (
-                len(self._edits(root)) in (2, 3)
-                and all(not field.get_value().strip() for field in self._edits(root)[2:])
-            ),
+            self._is_pdf_export,
         )
         fields = self._edits(target)
         if fields[0].get_value().strip().upper() != "PDF":
@@ -237,3 +234,13 @@ class OutstandingExporter(BusyExporter):
                     return path
             time.sleep(0.4)
         raise SyncError("BUSY did not finish saving the PDF in time.")
+
+    def _is_pdf_export(self, root: Any) -> bool:
+        fields = self._edits(root)
+        # Ledger PDFs also expose Attach Link=None after the optional password.
+        # These are read-only checks: never write a password or enable a link.
+        return (
+            2 <= len(fields) <= 4
+            and fields[0].get_value().strip().casefold() == "pdf"
+            and all(field.get_value().strip().casefold() in {"", "none"} for field in fields[2:])
+        )

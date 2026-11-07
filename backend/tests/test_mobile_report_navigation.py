@@ -61,9 +61,9 @@ def test_no_favourite_shortcut_when_home_recovery_fails() -> None:
     root.type_keys.assert_not_called()
 
 
-@pytest.mark.parametrize("auxiliary", [False, True])
+@pytest.mark.parametrize("auxiliary", [[], [""], ["None"], ["", "None"]])
 def test_direct_pdf_export_commits_format_and_dismisses_open_prompt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, auxiliary: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, auxiliary: list[str]
 ) -> None:
     exporter = OutstandingExporter(Settings(_env_file=None))
     report, dialog, prompt = Mock(), Mock(), Mock()
@@ -72,9 +72,9 @@ def test_direct_pdf_export_commits_format_and_dismisses_open_prompt(
     format_field, filename_field = Mock(), Mock()
     format_field.get_value.return_value = "PDF"
     fields = [format_field, filename_field]
-    if auxiliary:
+    for value in auxiliary:
         blank = Mock()
-        blank.get_value.return_value = ""
+        blank.get_value.return_value = value
         fields.append(blank)
     exporter._edits = Mock(return_value=fields)
     exporter._guard = Mock(side_effect=[[dialog], [dialog], [prompt]] + [[dialog]] * 5)
@@ -96,3 +96,21 @@ def test_direct_pdf_export_commits_format_and_dismisses_open_prompt(
     assert exporter._set.call_args_list[-1].args == (filename_field, str(path))
     assert any(call.args == (prompt, "No") for call in exporter._click.call_args_list)
     verify.assert_called_once_with(path, "PARTY", day)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        ["PDF", "file.pdf", "secret"],
+        ["PDF", "file.pdf", "URL"],
+        ["Microsoft Excel", "file.xlsx"],
+        ["PDF", "file.pdf", "", "None", "None"],
+    ],
+)
+def test_pdf_layout_rejects_password_links_and_unknown_fields(values: list[str]) -> None:
+    exporter = OutstandingExporter(Settings(_env_file=None))
+    fields = [Mock() for _ in values]
+    for field, value in zip(fields, values, strict=True):
+        field.get_value.return_value = value
+    exporter._edits = Mock(return_value=fields)
+    assert not exporter._is_pdf_export(Mock())
