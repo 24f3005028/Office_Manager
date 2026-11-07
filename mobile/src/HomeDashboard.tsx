@@ -94,7 +94,7 @@ export default function HomeDashboard({
       >
         <View style={styles.sectionHead}>
           <Text style={local.summaryLabel}>OFFICE TASKS</Text>
-          <Icon name="arrow" color="white" size={21} />
+          <Icon name="arrow" color={palette.blue} size={21} />
         </View>
         <Text style={local.summaryNumber}>
           {unavailable
@@ -166,24 +166,24 @@ export default function HomeDashboard({
 }
 const local = StyleSheet.create({
   summary: {
-    backgroundColor: palette.navy,
-    borderRadius: 24,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 18,
     padding: 22,
     gap: 10,
   },
   summaryLabel: {
     fontSize: 11,
     fontWeight: "700",
-    letterSpacing: 1.6,
-    color: "#d1e1f3",
+    letterSpacing: 0.8,
+    color: palette.muted,
   },
   summaryNumber: {
     fontSize: 30,
     lineHeight: 39,
     fontWeight: "700",
-    color: "white",
+    color: palette.ink,
   },
-  summaryCopy: { fontSize: 13, lineHeight: 20, color: "#d1e1f3" },
+  summaryCopy: { fontSize: 13, lineHeight: 20, color: palette.muted },
   quick: {
     flex: 1,
     backgroundColor: "white",

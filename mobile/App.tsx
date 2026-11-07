@@ -1407,7 +1407,7 @@ function OfficeApp() {
                   <Text style={styles.dangerText}>Disconnect this phone</Text>
                 </Pressable>
                 <Text style={[styles.noteText, { textAlign: "center" }]}>
-                  H.S. Traders Office · Version 1.7.2
+                  H.S. Traders Office · Version 1.7.3
                 </Text>
               </ScrollView>
             )}

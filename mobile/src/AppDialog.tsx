@@ -22,7 +22,6 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { dialogActions, dialogChoice, DialogAction, DialogRequest } from "./dialogModel";
-import { Icon, palette } from "./ui";
 
 type DialogApi = { alert: (title: string, message?: string, actions?: DialogAction[]) => void };
 const Context = createContext<DialogApi | null>(null);
@@ -57,50 +56,46 @@ export function AppDialogProvider({ children }: { children: ReactNode }) {
   }), []);
   const current = queue[0];
   const dismiss = useCallback((request: DialogRequest, index?: number) => {
-    // Ignore a second tap before React has removed the sheet.
+    // Ignore a second tap before React has removed the dialog.
     if (request.id <= lastHandled.current) return;
     lastHandled.current = request.id;
     setQueue((old) => old.filter((item) => item.id !== request.id));
     dialogChoice(request, index)?.onPress?.();
   }, []);
-  const destructive = current?.actions.some((action) => action.style === "destructive");
   return (
     <Context.Provider value={api}>
       {children}
-      <Modal visible={!!current} transparent animationType={reduceMotion ? "none" : "slide"}
+      <Modal visible={!!current} transparent animationType={reduceMotion ? "none" : "fade"}
         statusBarTranslucent onRequestClose={() => current && dismiss(current)}
         onShow={() => {
           const node = findNodeHandle(titleRef.current);
           if (node) AccessibilityInfo.setAccessibilityFocus(node);
         }}>
         {current && (
-          <View style={local.overlay}>
+          <View style={[local.overlay, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => dismiss(current)}
               accessibilityRole="button" accessibilityLabel="Close without making changes" />
-            <View accessibilityViewIsModal style={[local.sheet, {
-              maxHeight: height * 0.86, paddingBottom: Math.max(insets.bottom, 20),
-            }]}>
-              <View style={local.handle} importantForAccessibility="no" />
-              <ScrollView bounces={false} contentContainerStyle={local.content}>
-                <View style={[local.symbol, destructive && local.dangerSymbol]}>
-                  <Icon name={destructive ? "info" : "check"}
-                    color={destructive ? "#a23932" : palette.navy} size={26} />
-                </View>
+            <View accessibilityViewIsModal style={[local.dialog, { maxHeight: height * 0.8 }]}>
+              <ScrollView bounces={false} style={{ flexShrink: 1 }} contentContainerStyle={local.content}>
                 <Text ref={titleRef} accessibilityRole="header" style={local.title}>{current.title}</Text>
                 {!!current.message && <Text style={local.message}>{current.message}</Text>}
-                <View style={local.actions}>
-                  {current.actions.map((action, index) => ({ action, index })).reverse().map(({ action, index }) => (
-                    <Pressable key={index} accessibilityRole="button" accessibilityLabel={action.text}
-                      onPress={() => dismiss(current, index)} style={({ pressed }) => [
-                        local.button,
-                        action.style === "cancel" ? local.cancel : action.style === "destructive" ? local.danger : local.primary,
-                        pressed && { opacity: 0.8 },
-                      ]}>
-                      <Text style={[local.buttonText, action.style === "cancel" && local.cancelText]}>{action.text}</Text>
-                    </Pressable>
-                  ))}
-                </View>
               </ScrollView>
+              <View style={[local.actions, current.actions.length > 2 && { flexDirection: "column" }]}>
+                {current.actions.map((action, index) => (
+                  <Pressable key={index} accessibilityRole="button" accessibilityLabel={action.text}
+                    onPress={() => dismiss(current, index)} style={({ pressed }) => [
+                      local.button,
+                      current.actions.length <= 2 && { flex: 1 },
+                      index > 0 && (current.actions.length <= 2 ? local.verticalDivider : local.horizontalDivider),
+                      pressed && { backgroundColor: "#eeeeee" },
+                    ]}>
+                    <Text style={[local.buttonText,
+                      action.style !== "cancel" && { fontWeight: "600" },
+                      action.style === "destructive" && { color: "#d12622" },
+                    ]}>{action.text}</Text>
+                  </Pressable>
+                ))}
+              </View>
             </View>
           </View>
         )}
@@ -110,19 +105,14 @@ export function AppDialogProvider({ children }: { children: ReactNode }) {
 }
 
 const local = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "#122b4366", justifyContent: "flex-end" },
-  sheet: { backgroundColor: "#ffffff", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 12 },
-  handle: { alignSelf: "center", width: 40, height: 4, borderRadius: 2, backgroundColor: "#d8e1e8", marginBottom: 22 },
-  content: { paddingHorizontal: 24, gap: 16 },
-  symbol: { width: 54, height: 54, borderRadius: 27, backgroundColor: palette.light, alignItems: "center", justifyContent: "center" },
-  dangerSymbol: { backgroundColor: "#fcece9" },
-  title: { color: palette.ink, fontSize: 25, fontWeight: "700", lineHeight: 32 },
-  message: { color: palette.muted, fontSize: 16, lineHeight: 25 },
-  actions: { gap: 10, marginTop: 8 },
-  button: { borderRadius: 18, paddingVertical: 16, paddingHorizontal: 20, minHeight: 54, alignItems: "center", justifyContent: "center" },
-  primary: { backgroundColor: palette.navy },
-  cancel: { backgroundColor: "#f0f4f7" },
-  danger: { backgroundColor: "#a23932" },
-  buttonText: { color: "#ffffff", fontSize: 16, fontWeight: "700", textAlign: "center" },
-  cancelText: { color: palette.ink },
+  overlay: { flex: 1, backgroundColor: "#00000055", justifyContent: "center", alignItems: "center", paddingHorizontal: 28 },
+  dialog: { width: "100%", maxWidth: 320, backgroundColor: "#ffffff", borderRadius: 14, overflow: "hidden" },
+  content: { padding: 22, gap: 9 },
+  title: { color: "#1c1c1e", fontSize: 18, fontWeight: "600", lineHeight: 24, textAlign: "center" },
+  message: { color: "#3a3a3c", fontSize: 14, lineHeight: 21, textAlign: "center" },
+  actions: { flexDirection: "row", borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#c7c7cc" },
+  button: { paddingVertical: 14, paddingHorizontal: 10, minHeight: 50, alignItems: "center", justifyContent: "center" },
+  verticalDivider: { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: "#c7c7cc" },
+  horizontalDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#c7c7cc" },
+  buttonText: { color: "#0066cc", fontSize: 16, textAlign: "center", flexShrink: 1 },
 });

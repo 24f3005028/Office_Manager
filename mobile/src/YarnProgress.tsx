@@ -12,7 +12,7 @@ import {
 /** An indeterminate thread travelling along a bar; never invents a percentage. */
 export default function YarnProgress({
   label = "Working…",
-  color = "#315f94",
+  color = "#0066cc",
   style,
   accessibilityLabel,
 }: {
@@ -66,9 +66,9 @@ export default function YarnProgress({
 
 const local = StyleSheet.create({
   container: { alignSelf: "stretch", minWidth: 120, paddingVertical: 10, gap: 7 },
-  track: { height: 10, overflow: "hidden", borderRadius: 5, backgroundColor: "#e3e9ec" },
-  baseline: { position: "absolute", top: 4, left: 0, right: 0, height: 2, backgroundColor: "#c5d4e1" },
+  track: { height: 10, overflow: "hidden", borderRadius: 5, backgroundColor: "#e5e5ea" },
+  baseline: { position: "absolute", top: 4, left: 0, right: 0, height: 2, backgroundColor: "#d1d1d6" },
   thread: { position: "absolute", width: 76, height: 10, borderRadius: 5, overflow: "hidden" },
   strand: { position: "absolute", top: -5, width: 2, height: 22, backgroundColor: "#ffffff99", transform: [{ rotate: "35deg" }] },
-  label: { fontSize: 12, color: "#586b7f", textAlign: "center" },
+  label: { fontSize: 12, color: "#6c6c70", textAlign: "center" },
 });

@@ -2,14 +2,15 @@
   "expo": {
     "name": "H.S. Traders Office",
     "slug": "hs-traders-office",
-    "version": "1.7.2",
+    "version": "1.7.3",
     "scheme": "hstraders-office",
     "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "primaryColor": "#0066cc",
     "android": {
       "package": "com.hstraders.office",
-      "versionCode": 15,
+      "versionCode": 16,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -30,7 +31,7 @@
         {
           "image": "./assets/splash-icon.png",
           "imageWidth": 144,
-          "backgroundColor": "#f4f6fa"
+          "backgroundColor": "#ffffff"
         }
       ]
     ],
