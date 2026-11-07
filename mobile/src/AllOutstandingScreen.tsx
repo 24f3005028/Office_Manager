@@ -1,3 +1,4 @@
+import YarnProgress from "./YarnProgress";
 import {
   forwardRef,
   useCallback,
@@ -7,7 +8,6 @@ import {
   useState,
 } from "react";
 import {
-  ActivityIndicator,
   Alert,
   AppState,
   FlatList,
@@ -242,7 +242,7 @@ export default forwardRef<
           )}
           {(busy || running(report)) && (
             <View style={styles.card}>
-              <ActivityIndicator color={palette.blue} />
+              <YarnProgress color={palette.blue} />
               <Text style={styles.status}>
                 {report?.status === "warning"
                   ? "Checking whether someone is using BUSY…"

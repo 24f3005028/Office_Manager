@@ -1,8 +1,8 @@
+import YarnProgress from "./src/YarnProgress";
 import * as SplashScreen from "expo-splash-screen";
 import HomeDashboard from "./src/HomeDashboard";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   AppState,
   BackHandler,
@@ -500,35 +500,6 @@ function OfficeApp() {
       } else throw new Error("File sharing is unavailable on this phone.");
     });
   }
-  function sendToMe(kind: "reports" | "invoices", id: string) {
-    Alert.alert(
-      "Send to your WhatsApp?",
-      `Send this PDF to +${person?.phone ?? "your approved number"}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Send PDF",
-          onPress: () =>
-            void action(async () => {
-              const delivery = await api<{
-                status: string;
-                error: string | null;
-              }>(`/${kind}/${id}/send-to-me`, {});
-              if (delivery.status === "sent")
-                Alert.alert(
-                  "Sent to WhatsApp",
-                  "The office WhatsApp account accepted this PDF for sending.",
-                );
-              else
-                throw new Error(
-                  delivery.error ??
-                    "Check WhatsApp before trying again. This document was not automatically resent.",
-                );
-            }),
-        },
-      ],
-    );
-  }
   function pdfActions(kind: "reports" | "invoices", id: string, label: string) {
     const filename =
       (label
@@ -557,14 +528,6 @@ function OfficeApp() {
           secondary={kind === "reports"}
           disabled={busy}
           onPress={() => void getPdf(kind, id, "open", filename)}
-        />
-        <Button
-          title="Send to my WhatsApp"
-          icon="whatsapp"
-          green={kind !== "reports"}
-          secondary={kind === "reports"}
-          disabled={busy || !person}
-          onPress={() => sendToMe(kind, id)}
         />
         <View style={styles.smallActions}>
           {(
@@ -619,7 +582,7 @@ function OfficeApp() {
         </View>
         {pending && (
           <View style={styles.progress}>
-            <ActivityIndicator size="large" color={palette.blue} />
+            <YarnProgress color={palette.blue} />
             <Text style={styles.status}>{statusText[row.status]}</Text>
             <Text style={styles.emptyCopy}>
               The office is preparing your PDF. You can leave this screen and
@@ -782,7 +745,7 @@ function OfficeApp() {
           </View>
         )}
         {busy && (
-          <ActivityIndicator
+          <YarnProgress
             color={palette.blue}
             style={{ marginTop: 10 }}
             accessibilityLabel="Working"
@@ -1150,7 +1113,7 @@ function OfficeApp() {
                     <View style={styles.empty}>
                       {searching ? (
                         <>
-                          <ActivityIndicator color={palette.blue} />
+                          <YarnProgress color={palette.blue} />
                           <Text style={styles.emptyCopy}>Finding parties…</Text>
                         </>
                       ) : (
@@ -1443,7 +1406,7 @@ function OfficeApp() {
                   <Text style={styles.dangerText}>Disconnect this phone</Text>
                 </Pressable>
                 <Text style={[styles.noteText, { textAlign: "center" }]}>
-                  H.S. Traders Office · Version 1.7.0
+                  H.S. Traders Office · Version 1.7.1
                 </Text>
               </ScrollView>
             )}

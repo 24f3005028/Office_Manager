@@ -1,3 +1,4 @@
+import YarnProgress from "./YarnProgress";
 import {
   forwardRef,
   useCallback,
@@ -7,7 +8,6 @@ import {
   useState,
 } from "react";
 import {
-  ActivityIndicator,
   Alert,
   AppState,
   Pressable,
@@ -235,7 +235,7 @@ export default forwardRef<
         </View>
       )}
       {notice !== "" && <Note icon="info">{notice}</Note>}
-      {busy && <ActivityIndicator color={palette.blue} />}
+      {busy && <YarnProgress color={palette.blue} />}
       {form ? (
         <View style={styles.card}>
           <View>

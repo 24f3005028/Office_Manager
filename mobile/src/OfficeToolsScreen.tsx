@@ -1,3 +1,4 @@
+import YarnProgress from "./YarnProgress";
 import {
   ComponentRef,
   forwardRef,
@@ -8,7 +9,6 @@ import {
   useState,
 } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -359,6 +359,10 @@ export default forwardRef<
             ? row.result.status?.replaceAll("_", " ")
             : row.state.replaceAll("_", " ")}
         </Text>
+        {row.state === "accepted" &&
+          ["queued", "running"].includes(row.result.status ?? "") && (
+            <YarnProgress label={row.kind === "pouncha" ? "Updating the sheet…" : "Sending documents…"} />
+          )}
         {row.result.error && (
           <Text style={styles.error}>{row.result.error}</Text>
         )}
@@ -531,7 +535,7 @@ export default forwardRef<
           <Text style={[styles.error, styles.grow]}>{error}</Text>
         </View>
       )}
-      {busy && <ActivityIndicator color={palette.blue} />}
+      {busy && <YarnProgress color={palette.blue} />}
       {showResult && action ? (
         <>
           {actionCard(action)}

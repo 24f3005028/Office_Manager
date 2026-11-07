@@ -1,3 +1,4 @@
+import YarnProgress from "./YarnProgress";
 import { ReactNode, useCallback, useEffect, useState } from "react";
 import {
   AppState,
@@ -58,7 +59,9 @@ export default function HomeDashboard({
         <RefreshControl
           refreshing={refreshing}
           onRefresh={() => void refresh()}
-          tintColor={palette.blue}
+          tintColor="transparent"
+          colors={["transparent"]}
+          progressBackgroundColor={palette.background}
         />
       }
     >
@@ -81,6 +84,7 @@ export default function HomeDashboard({
         </View>
         <Logo />
       </View>
+      {refreshing && <YarnProgress label="Updating tasks…" />}
       <Pressable
         accessibilityRole="button"
         disabled={disabled}

@@ -1,3 +1,4 @@
+import YarnProgress from "./YarnProgress";
 import {
   forwardRef,
   useCallback,
@@ -7,8 +8,6 @@ import {
   useState,
 } from "react";
 import {
-  ActivityIndicator,
-  Alert,
   AppState,
   FlatList,
   Modal,
@@ -270,41 +269,17 @@ export default forwardRef<
       );
       return;
     }
-    Alert.alert(
-      mode === "ledger"
-        ? "Create copy account?"
-        : "Create group closing balances?",
-      `${name}\n${mode === "ledger" ? displayDate(from) + " to " : "As of "}${displayDate(end)}\nThe office gets a five-second warning and can pause if BUSY is in use.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Create report",
-          onPress: () =>
-            void run(async () => {
-              requestKey.current ??= `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-              const body =
-                mode === "ledger"
-                  ? {
-                      account_id: account!.id,
-                      start_date: from,
-                      end_date: through,
-                      request_key: requestKey.current,
-                    }
-                  : {
-                      group_id: group!.id,
-                      as_of: asOf,
-                      request_key: requestKey.current,
-                    };
-              const row = await api<AccountReport>(
-                `/account-reports/${mode === "ledger" ? "ledger" : "group-balances"}`,
-                body,
-              );
-              remember(row);
-              requestKey.current = null;
-            }),
-        },
-      ],
-    );
+    void run(async () => {
+      requestKey.current ??= `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const body = mode === "ledger"
+        ? { account_id: account!.id, start_date: from, end_date: through, request_key: requestKey.current }
+        : { group_id: group!.id, as_of: asOf, request_key: requestKey.current };
+      const row = await api<AccountReport>(
+        `/account-reports/${mode === "ledger" ? "ledger" : "group-balances"}`, body,
+      );
+      remember(row);
+      requestKey.current = null;
+    });
   }
   async function copyBalanceAccount(name: string) {
     await run(async () => {
@@ -386,7 +361,7 @@ export default forwardRef<
             <Text style={[styles.error, styles.grow]}>{error}</Text>
           </View>
         )}
-        {busy && <ActivityIndicator color={palette.blue} />}
+        {busy && <YarnProgress color={palette.blue} />}
         {report ? (
           <>
             <View style={styles.card}>
@@ -413,6 +388,7 @@ export default forwardRef<
               >
                 {statusLabel[report.status] ?? report.status}
               </Text>
+              {running && <YarnProgress label={statusLabel[report.status]} />}
               {!!report.error && (
                 <Text style={styles.error}>{report.error}</Text>
               )}
@@ -604,7 +580,7 @@ export default forwardRef<
                       editable={!busy}
                     />
                   </View>
-                  {searching && <ActivityIndicator color={palette.blue} />}
+                  {searching && <YarnProgress color={palette.blue} />}
                   {accounts.slice(0, query.trim() ? 100 : 20).map((row) => (
                     <Pressable
                       key={row.id}

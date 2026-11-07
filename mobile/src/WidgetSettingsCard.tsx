@@ -1,3 +1,4 @@
+import YarnProgress from "./YarnProgress";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
 import { Button, styles } from "./ui";
@@ -33,6 +34,7 @@ export default function WidgetSettingsCard() {
       <Button title="Refresh tasks now" secondary disabled={busy} onPress={() => void run(async () => { await refreshHomeWidgets(); setNotice("Task data refreshed. No BUSY report was requested."); })} />
       <Text style={styles.noteText}>Tap the search bar to type a party name in the app and share its saved statement. Fresh BUSY reports still require your request. Task updates may take 15 minutes or longer; task text is visible on your unlocked home screen.</Text>
     </>}
+    {busy && <YarnProgress label="Updating widgets…" />}
     {!!notice && <Text accessibilityRole="alert" style={styles.muted}>{notice}</Text>}
   </View>;
 }

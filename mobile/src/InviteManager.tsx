@@ -1,3 +1,4 @@
+import YarnProgress from "./YarnProgress";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
@@ -126,6 +127,7 @@ export default function InviteManager({ api }: { api: Api }) {
         disabled={busy || !name.trim() || !country || !phone}
         onPress={() => void createInvite()}
       />
+      {busy && <YarnProgress label="Preparing invite…" />}
       {invite && (
         <View style={{ gap: 14 }}>
           <View style={styles.divider} />
