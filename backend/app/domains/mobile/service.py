@@ -16,6 +16,15 @@ from typing import Any
 import httpx
 
 from app.config import Settings
+from app.domains.mobile.account_catalogue import AccountCatalogue
+from app.domains.mobile.account_reports import (
+    CopyAccountExporter,
+    GroupBalancesExporter,
+    financial_year,
+    india_today,
+    report_filename,
+    verify_account_pdf,
+)
 from app.domains.mobile.all_outstanding import ALL_ID, ALL_NAME, AllAccountsExporter, verify_all_pdf
 from app.domains.mobile.desktop import desktop_lock, office_warning
 from app.domains.mobile.invoices import InvoiceCatalogue, invoice_filename
@@ -23,7 +32,6 @@ from app.domains.mobile.office import OfficeTools
 from app.domains.mobile.reports import (
     REPORT_START,
     OutstandingExporter,
-    statement_filename,
     verify_report,
 )
 from app.domains.mobile.store import MobileStore, now
@@ -46,6 +54,7 @@ class MobileService:
         self.warning = warning
         self.office = OfficeTools(store)
         self.tasks = TaskStore(store.database)
+        self.accounts = AccountCatalogue(store)
         self.exporter = exporter or OutstandingExporter(settings)
         self.all_exporter = AllAccountsExporter(settings)
         self.directory = settings.database_path.expanduser().resolve().parent / "mobile-reports"
@@ -122,7 +131,24 @@ class MobileService:
                 directory = self.directory / job_id
                 directory.mkdir(parents=True, exist_ok=True)
                 as_of = date.fromisoformat(job["as_of"])
-                if job["party_id"] == ALL_ID:
+                if job["report_kind"] == "ledger":
+                    start = date.fromisoformat(json.loads(job["parameters"])["start_date"])
+                    path = CopyAccountExporter(self.settings, start).export_ledger(
+                        job["party_name"], as_of, directory
+                    )
+                    details = verify_account_pdf(path, job["party_name"], as_of, start)
+                elif job["report_kind"] == "group_balances":
+                    path, snapshot = GroupBalancesExporter(self.settings).export_group(
+                        job["party_name"], as_of, directory
+                    )
+                    content = json.dumps(snapshot, ensure_ascii=False).encode("utf-8")
+                    (directory / "balances.json").write_bytes(content)
+                    details = verify_account_pdf(path, job["party_name"], as_of)
+                    details.update(
+                        {key: value for key, value in snapshot.items() if key != "accounts"}
+                    )
+                    details["data_hash"] = hashlib.sha256(content).hexdigest()
+                elif job["party_id"] == ALL_ID:
                     path, snapshot = self.all_exporter.export_all(as_of, directory)
                     content = json.dumps(snapshot, ensure_ascii=False).encode("utf-8")
                     (directory / "outstanding.json").write_bytes(content)
@@ -168,6 +194,54 @@ class MobileService:
             self.pool.submit(self.execute, job["id"])
         return job
 
+    def submit_account(
+        self,
+        user_id: str,
+        subject_id: str,
+        kind: str,
+        end: date,
+        key: str,
+        start: date | None = None,
+    ) -> dict[str, Any]:
+        today = india_today()
+        if kind == "ledger":
+            if start is None or not start <= end <= today:
+                raise ValueError("Choose a valid start and end date, through today.")
+            subject = self.accounts.account(subject_id)
+            parameters = {"start_date": start.isoformat()}
+        elif kind == "group_balances":
+            fy, first, _ = financial_year(today)
+            if not first <= end <= today:
+                raise ValueError(
+                    f"Choose a closing-balance date in financial year {fy}, through today."
+                )
+            subject = self.accounts.group(subject_id)
+            parameters = {"financial_year": fy}
+        else:
+            raise ValueError("Unknown account report.")
+        if subject is None:
+            raise ValueError("Choose an account or group from the saved account list.")
+        self.cleanup_reports()
+        job, created = self.store.create_job(
+            user_id, subject, end.isoformat(), key, report_kind=kind, parameters=parameters
+        )
+        if created:
+            self.pool.submit(self.execute, job["id"])
+        return job
+
+    def balance_data(self, user_id: str, job_id: str) -> dict[str, Any]:
+        pdf, job = self.report_file(user_id, job_id)
+        if job["report_kind"] != "group_balances":
+            raise ValueError("This is not a group closing-balance report.")
+        path = pdf.parent / "balances.json"
+        if path.is_symlink() or path.resolve().parent != pdf.parent:
+            raise ValueError("Group balance data is unavailable.")
+        content = path.read_bytes()
+        if hashlib.sha256(content).hexdigest() != json.loads(job["details"])["data_hash"]:
+            raise ValueError("Group balance data changed. Request a fresh report.")
+        result: dict[str, Any] = json.loads(content)
+        return result
+
     def outstanding_data(self, user_id: str, job_id: str) -> dict[str, Any]:
         pdf, job = self.report_file(user_id, job_id)
         if job["party_id"] != ALL_ID:
@@ -198,7 +272,7 @@ class MobileService:
     async def send(self, user: dict[str, Any], kind: str, file_id: str) -> dict[str, Any]:
         if kind == "report":
             path, report = self.report_file(user["id"], file_id)
-            filename = statement_filename(report["party_name"])
+            filename = report_filename(report)
         else:
             path, invoice = self.catalogue.file(file_id)
             filename = invoice_filename(invoice)

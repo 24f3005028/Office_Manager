@@ -18,9 +18,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.config import Settings
 from app.db import Database
 from app.domains.documents.scanner import DocumentScanner
+from app.domains.mobile.account_reports import report_filename
+from app.domains.mobile.account_routes import install_account_routes
 from app.domains.mobile.invoices import InvoiceCatalogue, invoice_filename
 from app.domains.mobile.office_routes import install_office_routes
-from app.domains.mobile.reports import statement_filename
 from app.domains.mobile.service import MobileService
 from app.domains.mobile.store import MobileStore
 from app.domains.mobile.task_routes import install_task_routes
@@ -229,7 +230,7 @@ def create_mobile_app(
     @app.get("/mobile/v1/reports")
     def history(request: Request, current: CurrentUser) -> list[dict[str, Any]]:
         instance(request).cleanup_reports()
-        return instance(request).store.jobs(current["id"])
+        return instance(request).store.jobs(current["id"], "outstanding")
 
     @app.post("/mobile/v1/outstanding/all", status_code=202)
     def all_outstanding(
@@ -260,9 +261,7 @@ def create_mobile_app(
     def report_pdf(job_id: str, request: Request, current: CurrentUser) -> FileResponse:
         try:
             path, row = instance(request).report_file(current["id"], job_id)
-            return FileResponse(
-                path, media_type="application/pdf", filename=statement_filename(row["party_name"])
-            )
+            return FileResponse(path, media_type="application/pdf", filename=report_filename(row))
         except (ValueError, OSError) as exc:
             raise HTTPException(
                 404, "Report unavailable or expired. Request a fresh statement."
@@ -316,6 +315,7 @@ def create_mobile_app(
 
     install_office_routes(app, user)
     install_task_routes(app, user)
+    install_account_routes(app, user)
     return app
 
 

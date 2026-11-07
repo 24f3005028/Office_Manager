@@ -88,6 +88,12 @@ def verify_report(path: Path, party: str, as_of: date) -> dict[str, Any]:
 
 
 class OutstandingExporter(BusyExporter):
+    def _pdf_filename(self, party: str) -> str:
+        return statement_filename(party)
+
+    def _verify_export_pdf(self, path: Path, party: str, as_of: date) -> Any:
+        return verify_report(path, party, as_of)
+
     def _wait(self, main: Any, desktop: Any, predicate: Any, seconds: float = 12) -> Any:
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
@@ -210,7 +216,7 @@ class OutstandingExporter(BusyExporter):
         fields = self._edits(target)
         if fields[0].get_value().strip().upper() != "PDF":
             raise SyncError("BUSY did not retain PDF as the export format.")
-        path = directory / statement_filename(party)
+        path = directory / self._pdf_filename(party)
         if path.exists():
             raise SyncError("The report destination already exists; it was not overwritten.")
         self._set(fields[1], str(path))
@@ -227,7 +233,7 @@ class OutstandingExporter(BusyExporter):
                 stable = stable + 1 if size > 0 and size == previous else 0
                 previous = size
                 if stable >= 3:
-                    verify_report(path, party, as_of)
+                    self._verify_export_pdf(path, party, as_of)
                     return path
             time.sleep(0.4)
         raise SyncError("BUSY did not finish saving the PDF in time.")

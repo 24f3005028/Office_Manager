@@ -8,7 +8,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.domains.mobile.accounts import account_names
+from app.domains.mobile.account_catalogue import AccountCatalogue
+from app.domains.mobile.accounts import account_rows
 from app.domains.mobile.store import MobileStore
 
 
@@ -66,7 +67,16 @@ async def accounts(request: Request, file: Annotated[UploadFile, File()]) -> dic
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(413, "Account export exceeds 10 MiB.")
     try:
-        names = account_names(content)
+        rows = account_rows(content)
+        names = [
+            row["name"]
+            for row in rows
+            if row["group"].casefold() in {"sundry debtors", "sundry creditors"}
+        ]
     except Exception as exc:
         raise HTTPException(400, "Use the original BUSY List of Accounts .xlsx export.") from exc
-    return {"added": store(request).add_parties(names), "trade_accounts": len(names)}
+    return {
+        "added": store(request).add_parties(names),
+        "trade_accounts": len(names),
+        **AccountCatalogue(store(request)).import_rows(rows),
+    }

@@ -57,6 +57,17 @@ class MobileStore:
         self.database = database
         with closing(database.connect()) as db, db:
             db.executescript(SCHEMA)
+            db.execute("BEGIN IMMEDIATE")
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(mobile_jobs)")}
+            if "report_kind" not in columns:
+                db.execute(
+                    "ALTER TABLE mobile_jobs ADD COLUMN report_kind "
+                    "TEXT NOT NULL DEFAULT 'outstanding'"
+                )
+            if "parameters" not in columns:
+                db.execute(
+                    "ALTER TABLE mobile_jobs ADD COLUMN parameters TEXT NOT NULL DEFAULT '{}'"
+                )
 
     def users(self) -> list[dict[str, Any]]:
         with closing(self.database.connect()) as db:
@@ -204,7 +215,14 @@ class MobileStore:
             return dict(row) if row else None
 
     def create_job(
-        self, user_id: str, party: dict[str, str], as_of: str, request_key: str
+        self,
+        user_id: str,
+        party: dict[str, str],
+        as_of: str,
+        request_key: str,
+        *,
+        report_kind: str = "outstanding",
+        parameters: dict[str, str] | None = None,
     ) -> tuple[dict[str, Any], bool]:
         with closing(self.database.connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
@@ -213,7 +231,12 @@ class MobileStore:
                 (user_id, request_key),
             ).fetchone()
             if existing:
-                if existing["party_id"] != party["id"] or existing["as_of"] != as_of:
+                if (
+                    existing["party_id"] != party["id"]
+                    or existing["as_of"] != as_of
+                    or existing["report_kind"] != report_kind
+                    or json.loads(existing["parameters"]) != (parameters or {})
+                ):
                     raise ValueError(
                         "This request ID was already used for different report details."
                     )
@@ -227,9 +250,20 @@ class MobileStore:
             job_id = uuid4().hex
             db.execute(
                 "INSERT INTO mobile_jobs "
-                "(id,user_id,request_key,party_id,party_name,as_of,status,created_at) "
-                "VALUES (?,?,?,?,?,?,'queued',?)",
-                (job_id, user_id, request_key, party["id"], party["name"], as_of, now()),
+                "(id,user_id,request_key,party_id,party_name,as_of,status,created_at,"
+                "report_kind,parameters) "
+                "VALUES (?,?,?,?,?,?,'queued',?,?,?)",
+                (
+                    job_id,
+                    user_id,
+                    request_key,
+                    party["id"],
+                    party["name"],
+                    as_of,
+                    now(),
+                    report_kind,
+                    json.dumps(parameters or {}, sort_keys=True),
+                ),
             )
             row = db.execute("SELECT * FROM mobile_jobs WHERE id=?", (job_id,)).fetchone()
             return self.public(dict(row)), True
@@ -239,8 +273,11 @@ class MobileStore:
         return {
             key: value
             for key, value in row.items()
-            if key not in {"pdf_path", "pdf_hash", "request_key"}
-        } | {"details": json.loads(row["details"]) if row.get("details") else None}
+            if key not in {"pdf_path", "pdf_hash", "request_key", "parameters"}
+        } | {
+            "details": json.loads(row["details"]) if row.get("details") else None,
+            "parameters": json.loads(row.get("parameters") or "{}"),
+        }
 
     def job(self, job_id: str, user_id: str | None = None) -> dict[str, Any] | None:
         with closing(self.database.connect()) as db:
@@ -249,13 +286,14 @@ class MobileStore:
                 return None
             return dict(row)
 
-    def jobs(self, user_id: str) -> list[dict[str, Any]]:
+    def jobs(self, user_id: str, report_kind: str | None = None) -> list[dict[str, Any]]:
         with closing(self.database.connect()) as db:
             return [
                 self.public(dict(row))
                 for row in db.execute(
-                    "SELECT * FROM mobile_jobs WHERE user_id=? ORDER BY created_at DESC LIMIT 30",
-                    (user_id,),
+                    "SELECT * FROM mobile_jobs WHERE user_id=? AND (? IS NULL OR report_kind=?) "
+                    "ORDER BY created_at DESC LIMIT 30",
+                    (user_id, report_kind, report_kind),
                 )
             ]
 
