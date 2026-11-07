@@ -45,6 +45,8 @@ mobile/.env.local
 *.apks
 *.idsig
 mobile/build/
+mobile/modules/**/android/build/
+mobile/modules/**/android/.gradle/
 mobile/web-build/
 output/android/
 output/mobile-ui/

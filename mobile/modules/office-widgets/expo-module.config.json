@@ -1,0 +1,4 @@
+{
+  "platforms": ["android"],
+  "android": { "modules": ["com.hstraders.widgets.OfficeWidgetsModule"] }
+}

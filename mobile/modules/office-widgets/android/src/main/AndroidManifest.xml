@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <receiver android:name=".TasksWidgetProvider" android:exported="false" android:label="Office tasks">
+      <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/office_tasks_widget" />
+    </receiver>
+    <receiver android:name=".PartyWidgetProvider" android:exported="false" android:label="Party outstanding">
+      <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+      <meta-data android:name="android.appwidget.provider" android:resource="@xml/office_party_widget" />
+    </receiver>
+  </application>
+</manifest>

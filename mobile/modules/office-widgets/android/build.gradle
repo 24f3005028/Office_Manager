@@ -1,0 +1,27 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.hstraders.widgets'
+version = '1.0.0'
+
+android {
+  namespace 'com.hstraders.widgets'
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+  testOptions {
+    unitTests.includeAndroidResources = true
+    unitTests.all {
+      systemProperty 'robolectric.dependency.repo.url', 'https://repo.maven.apache.org/maven2'
+      systemProperty 'office.widget.previewDir', rootProject.file('../../output/mobile-ui').absolutePath
+    }
+  }
+}
+
+dependencies {
+  testImplementation 'junit:junit:4.13.2'
+  testImplementation 'org.robolectric:robolectric:4.17'
+}
