@@ -1,11 +1,12 @@
+import { useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 export const palette = {
-  navy: "#102f50",
-  blue: "#2a6996",
+  navy: "#173b60",
+  blue: "#315f94",
   ink: "#172f45",
-  muted: "#687b8a",
-  background: "#f5f7f8",
+  muted: "#586b7f",
+  background: "#f4f6fa",
   border: "#e3e9ec",
   teal: "#147b69",
   light: "#eaf3f8",
@@ -121,14 +122,59 @@ export function Heading({
 export function Note({
   children,
   icon = "shield",
+  details = false,
 }: {
   children: React.ReactNode;
   icon?: IconName;
+  details?: boolean;
 }) {
-  return (
+  const [expanded, setExpanded] = useState(false);
+  const long = details;
+  return long ? (
+    <View style={{ gap: 8 }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded(!expanded)}
+        style={[styles.row, { minHeight: 48 }]}
+      >
+        <Icon name={icon} color={palette.muted} size={18} />
+        <Text style={[styles.link, { fontSize: 13 }]}>Helpful details</Text>
+        <Icon
+          name={expanded ? "close" : "chevron"}
+          size={15}
+          color={palette.muted}
+        />
+      </Pressable>
+      {expanded && <Text style={styles.noteText}>{children}</Text>}
+    </View>
+  ) : (
     <View style={styles.note}>
       <Icon name={icon} color={palette.muted} size={18} />
       <Text style={styles.noteText}>{children}</Text>
+    </View>
+  );
+}
+export function Disclosure({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <View style={{ gap: 12 }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded(!expanded)}
+        style={[styles.sectionHead, { minHeight: 48 }]}
+      >
+        <Text style={styles.link}>{title}</Text>
+        <Icon name={expanded ? "close" : "chevron"} size={17} />
+      </Pressable>
+      {expanded && children}
     </View>
   );
 }
@@ -253,8 +299,8 @@ export const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: palette.border,
   },
-  logo: { width: 38, height: 48 },
-  welcomeLogo: { width: 88, height: 124 },
+  logo: { width: 46, height: 46, borderRadius: 23 },
+  welcomeLogo: { width: 112, height: 112, borderRadius: 56 },
   brand: {
     fontWeight: "800",
     fontSize: 17,
@@ -264,25 +310,25 @@ export const styles = StyleSheet.create({
   brandSub: { fontSize: 12, color: palette.muted, marginTop: 3 },
   headerText: { flex: 1 },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: palette.light,
     alignItems: "center",
     justifyContent: "center",
   },
   avatarText: { fontSize: 15, fontWeight: "700", color: palette.navy },
-  content: { padding: 22, gap: 20, paddingBottom: 32, flexGrow: 1 },
+  content: { padding: 20, gap: 18, paddingBottom: 32, flexGrow: 1 },
   heading: { gap: 8, marginTop: 4, marginBottom: 2 },
   eyebrow: {
     fontSize: 11,
     fontWeight: "800",
-    letterSpacing: 2,
+    letterSpacing: 1.4,
     color: palette.blue,
   },
   title: {
-    fontSize: 28,
-    lineHeight: 35,
+    fontSize: 26,
+    lineHeight: 33,
     letterSpacing: -0.9,
     fontWeight: "800",
     color: palette.ink,
@@ -325,7 +371,7 @@ export const styles = StyleSheet.create({
   },
   field: { gap: 0 },
   card: {
-    padding: 21,
+    padding: 18,
     backgroundColor: "white",
     borderRadius: 20,
     borderColor: palette.border,
@@ -333,15 +379,15 @@ export const styles = StyleSheet.create({
     gap: 18,
   },
   cardTitle: {
-    fontSize: 20,
-    lineHeight: 27,
+    fontSize: 19,
+    lineHeight: 26,
     fontWeight: "700",
     color: palette.ink,
   },
   button: {
     backgroundColor: palette.navy,
     minHeight: 54,
-    borderRadius: 13,
+    borderRadius: 27,
     paddingHorizontal: 18,
     paddingVertical: 15,
     alignItems: "center",
@@ -377,15 +423,15 @@ export const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   dismiss: {
-    minHeight: 44,
-    minWidth: 44,
+    minHeight: 48,
+    minWidth: 48,
     alignItems: "center",
     justifyContent: "center",
     margin: -10,
   },
   link: { color: palette.blue, fontWeight: "700", fontSize: 14 },
   textButton: {
-    minHeight: 44,
+    minHeight: 48,
     justifyContent: "center",
     alignSelf: "flex-start",
   },
@@ -469,11 +515,11 @@ export const styles = StyleSheet.create({
     gap: 16,
     alignItems: "center",
     backgroundColor: "white",
-    padding: 20,
-    borderRadius: 19,
+    padding: 16,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: palette.border,
-    minHeight: 92,
+    minHeight: 82,
   },
   tileIcon: {
     width: 48,
@@ -485,7 +531,7 @@ export const styles = StyleSheet.create({
     justifyContent: "center",
   },
   tileTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "700",
     color: palette.ink,
     marginBottom: 5,
@@ -658,9 +704,9 @@ export const styles = StyleSheet.create({
   },
   dangerText: { color: "#ad4941", fontSize: 14, fontWeight: "700" },
   menuButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: palette.light,
     alignItems: "center",
     justifyContent: "center",
@@ -706,9 +752,9 @@ export const styles = StyleSheet.create({
     gap: 10,
   },
   backButton: {
-    minHeight: 44,
-    minWidth: 44,
-    borderRadius: 22,
+    minHeight: 48,
+    minWidth: 48,
+    borderRadius: 24,
     overflow: "hidden",
     backgroundColor: "white",
     flexDirection: "row",

@@ -598,7 +598,6 @@ export default forwardRef<
             icon="history"
             onPress={onShowActivity}
           />
-          <Note>Nothing starts until you choose and confirm a task.</Note>
         </>
       ) : mode === "tools" && tool === "pouncha" ? (
         <>
@@ -645,7 +644,7 @@ export default forwardRef<
               disabled={busy || active}
               onPress={() => sync(true)}
             />
-            <Note>
+            <Note details>
               Preview reads BUSY without changing the sheet. The office can
               cancel before desktop control begins.
             </Note>
@@ -668,7 +667,6 @@ export default forwardRef<
           <Note icon="whatsapp">
             Office WhatsApp:{" "}
             {bridge?.connected ? "Connected" : (bridge?.status ?? "Checking…")}.
-            Bills come from saved PDFs; BUSY is not operated.
           </Note>
           <Button
             title="Check office connection"
@@ -1014,7 +1012,7 @@ export default forwardRef<
               </Text>
             </View>
           )}
-          <Note>
+          <Note details>
             Actions run only when you confirm them. If a result is uncertain,
             check the office dashboard before retrying.
           </Note>

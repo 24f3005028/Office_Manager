@@ -2,14 +2,14 @@
   "expo": {
     "name": "H.S. Traders Office",
     "slug": "hs-traders-office",
-    "version": "1.5.1",
+    "version": "1.6.0",
     "scheme": "hstraders-office",
     "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "android": {
       "package": "com.hstraders.office",
-      "versionCode": 10,
+      "versionCode": 11,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -24,7 +24,15 @@
       "expo-sharing",
       "expo-notifications",
       "expo-background-task",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 144,
+          "backgroundColor": "#f4f6fa"
+        }
+      ]
     ],
     "extra": {
       "description": "Private, on-demand office statements and bill PDFs"

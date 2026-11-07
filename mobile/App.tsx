@@ -1,3 +1,5 @@
+import * as SplashScreen from "expo-splash-screen";
+import HomeDashboard from "./src/HomeDashboard";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -22,7 +24,11 @@ import InviteManager from "./src/InviteManager";
 import TasksScreen, { TasksHandle } from "./src/TasksScreen";
 import DateField from "./src/DateField";
 import WidgetSettingsCard from "./src/WidgetSettingsCard";
-import { clearHomeWidgets, refreshHomeWidgets, widgetSettings } from "./src/homeWidgets";
+import {
+  clearHomeWidgets,
+  refreshHomeWidgets,
+  widgetSettings,
+} from "./src/homeWidgets";
 import { latestPartyStatement, widgetRoute } from "./src/widgetModel";
 import NavigationDrawer, { NavigationScreen } from "./src/NavigationDrawer";
 import AllOutstandingScreen, {
@@ -89,7 +95,8 @@ function OfficeApp() {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [widgetIntent, setWidgetIntent] = useState<ReturnType<typeof widgetRoute>>(null);
+  const [widgetIntent, setWidgetIntent] =
+    useState<ReturnType<typeof widgetRoute>>(null);
   const partySearchInput = useRef<React.ComponentRef<typeof TextInput>>(null);
   const [widgetSearchFocus, setWidgetSearchFocus] = useState(0);
   const [query, setQuery] = useState(""),
@@ -180,7 +187,9 @@ function OfficeApp() {
     };
   }, [session]);
   useEffect(() => {
-    void Linking.getInitialURL().then((url) => setWidgetIntent(widgetRoute(url))).catch(() => {});
+    void Linking.getInitialURL()
+      .then((url) => setWidgetIntent(widgetRoute(url)))
+      .catch(() => {});
     const subscription = Linking.addEventListener("url", ({ url }) => {
       const route = widgetRoute(url);
       if (route) setWidgetIntent(route);
@@ -188,25 +197,39 @@ function OfficeApp() {
     return () => subscription.remove();
   }, []);
   useEffect(() => {
-    if (!session || !widgetIntent || restoring) return;
+    if (!session || !person || !widgetIntent || restoring) return;
     const route = widgetIntent;
     setWidgetIntent(null);
     setMenuOpen(false);
-    if (route === "tasks") {
+    if (route === "tasks" || route === "new-task") {
       tasksFrom.current = "home";
       setScreen("tasks");
-      void widgetSettings().then((settings) => taskScreen.current?.showOpen(settings.scope));
+      void widgetSettings().then((settings) => {
+        taskScreen.current?.showOpen(settings.scope);
+        if (route === "new-task") taskScreen.current?.newTask();
+      });
       return;
     }
-    if (route === "setup") { accountFrom.current = "home"; setScreen("account"); return; }
+    if (route === "setup") {
+      accountFrom.current = "home";
+      setScreen("account");
+      return;
+    }
     statementFrom.current = "home";
-    if (activeReport) { setScreen("outstanding"); return; }
-    setParty(null); setReport(null); setQuery(""); setAsOf(todayIndia());
+    if (activeReport) {
+      setScreen("outstanding");
+      return;
+    }
+    setParty(null);
+    setReport(null);
+    setQuery("");
+    setAsOf(todayIndia());
     setScreen("outstanding");
     setWidgetSearchFocus((value) => value + 1);
-  }, [session, widgetIntent, restoring]);
+  }, [session, person, widgetIntent, restoring]);
   useEffect(() => {
-    if (!widgetSearchFocus || screen !== "outstanding" || party || report) return;
+    if (!widgetSearchFocus || screen !== "outstanding" || party || report)
+      return;
     const timer = setTimeout(() => partySearchInput.current?.focus(), 250);
     return () => clearTimeout(timer);
   }, [widgetSearchFocus, screen, party, report]);
@@ -288,7 +311,8 @@ function OfficeApp() {
   function choosePartyForStatement(selected: Party) {
     Keyboard.dismiss();
     const token = session?.token;
-    setParty(selected); setReport(null);
+    setParty(selected);
+    setReport(null);
     void action(async () => {
       const rows = await api<Report[]>("/reports");
       if (!mounted.current || currentSession.current?.token !== token) return;
@@ -508,11 +532,20 @@ function OfficeApp() {
         .slice(0, 140) || "Statement") + ".pdf";
     return (
       <View style={styles.actions}>
-        {kind === "reports" && <>
-          <Button title="Share PDF" icon="whatsapp" green disabled={busy}
-            onPress={() => void getPdf(kind, id, "share", filename)} />
-          <Text style={styles.noteText}>Choose WhatsApp or another app in your phone’s sharing menu.</Text>
-        </>}
+        {kind === "reports" && (
+          <>
+            <Button
+              title="Share PDF"
+              icon="whatsapp"
+              green
+              disabled={busy}
+              onPress={() => void getPdf(kind, id, "share", filename)}
+            />
+            <Text style={styles.noteText}>
+              Choose WhatsApp or another app in your phone’s sharing menu.
+            </Text>
+          </>
+        )}
         <Button
           title="Open PDF"
           icon="file"
@@ -534,23 +567,25 @@ function OfficeApp() {
               ["save", "download", "Download"],
               ["share", "share", "Share"],
             ] as const
-          ).filter(([mode]) => kind !== "reports" || mode !== "share").map(([mode, icon, title]) => (
-            <Pressable
-              key={mode}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: busy }}
-              disabled={busy}
-              onPress={() => void getPdf(kind, id, mode, filename)}
-              style={({ pressed }) => [
-                styles.smallAction,
-                busy && styles.disabled,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Icon name={icon} size={18} />
-              <Text style={styles.smallActionText}>{title}</Text>
-            </Pressable>
-          ))}
+          )
+            .filter(([mode]) => kind !== "reports" || mode !== "share")
+            .map(([mode, icon, title]) => (
+              <Pressable
+                key={mode}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: busy }}
+                disabled={busy}
+                onPress={() => void getPdf(kind, id, mode, filename)}
+                style={({ pressed }) => [
+                  styles.smallAction,
+                  busy && styles.disabled,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Icon name={icon} size={18} />
+                <Text style={styles.smallActionText}>{title}</Text>
+              </Pressable>
+            ))}
         </View>
       </View>
     );
@@ -663,15 +698,14 @@ function OfficeApp() {
     setParty(null);
     setQuery("");
   }
-  if (restoring)
-    return (
-      <View style={styles.loading}>
-        <Logo large />
-        <ActivityIndicator color={palette.blue} />
-      </View>
-    );
+  if (restoring) return null;
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView
+      style={styles.root}
+      onLayout={() => {
+        void SplashScreen.hideAsync().catch(() => {});
+      }}
+    >
       <StatusBar barStyle="dark-content" />
       <KeyboardAvoidingView
         style={styles.screen}
@@ -698,7 +732,7 @@ function OfficeApp() {
           )}
           <View style={styles.headerText}>
             <Text style={styles.brand}>H.S. TRADERS</Text>
-            <Text style={styles.brandSub}>Your office, wherever you are</Text>
+            <Text style={styles.brandSub}>Office workspace</Text>
           </View>
           {session && (
             <Pressable
@@ -911,75 +945,15 @@ function OfficeApp() {
               </View>
             )}
             {screen === "home" ? (
-              <ScrollView contentContainerStyle={styles.content}>
-                <Heading
-                  eyebrow="YOUR WORKSPACE"
-                  title={`Hello${person ? ", " + person.name.split(" ")[0] : ""}.`}
-                  subtitle="Choose what you want to do."
-                />
-                <TaskTile
-                  title="Outstanding statement"
-                  subtitle="Choose a party and get their pending bills."
-                  icon="statement"
-                  disabled={busy}
-                  onPress={() => void open("outstanding")}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={busy}
-                  onPress={() => void open("invoices")}
-                  style={({ pressed }) => [
-                    styles.billTile,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <View style={styles.tileIcon}>
-                    <Icon name="search" size={25} />
-                  </View>
-                  <View style={styles.grow}>
-                    <Text style={styles.tileTitle}>Find a bill</Text>
-                    <Text style={styles.tileCopy}>
-                      Enter a bill number to get its PDF.
-                    </Text>
-                  </View>
-                  <Icon name="chevron" size={18} />
-                </Pressable>
-                <TaskTile
-                  title="All accounts outstanding"
-                  subtitle="Pending bills and totals for every party."
-                  icon="statement"
-                  disabled={busy}
-                  onPress={() => void open("allOutstanding")}
-                />
-                <TaskTile
-                  title="Office tools"
-                  subtitle="Update Pouncha or send saved bill PDFs."
-                  icon="calendar"
-                  disabled={busy}
-                  onPress={() => void open("tools")}
-                />
-                <TaskTile
-                  title="Shared tasks"
-                  subtitle="Office to-dos, due dates and reminders."
-                  icon="check"
-                  disabled={busy}
-                  onPress={() => {
-                    tasksFrom.current = "home";
-                    void open("tasks");
-                  }}
-                />
-                {person?.can_invite_users && (
-                  <Button
-                    title="Invite new users"
-                    secondary
-                    icon="share"
-                    disabled={busy}
-                    onPress={() => {
-                      accountFrom.current = "home";
-                      void open("account");
-                    }}
-                  />
-                )}
+              <HomeDashboard
+                person={person}
+                api={api}
+                disabled={busy}
+                onOpen={(target) => {
+                  if (target === "tasks") tasksFrom.current = "home";
+                  void open(target);
+                }}
+              >
                 <View style={styles.sectionHead}>
                   <Text style={styles.sectionTitle}>Recent statements</Text>
                   <Pressable
@@ -988,25 +962,20 @@ function OfficeApp() {
                     style={styles.textButton}
                     onPress={() => void open("history")}
                   >
-                    <Text style={styles.link}>View all</Text>
+                    <Text style={styles.link}>See all</Text>
                   </Pressable>
                 </View>
                 {history.length ? (
-                  <View style={{ gap: 10 }}>
-                    {history.slice(0, 2).map(historyRow)}
-                  </View>
+                  history.slice(0, 2).map(historyRow)
                 ) : (
                   <View style={styles.card}>
-                    <Text style={styles.muted}>
-                      Your statements will appear here after your first request.
+                    <Text style={styles.muted}>No statements yet.</Text>
+                    <Text style={styles.noteText}>
+                      Choose a party above to create your first statement.
                     </Text>
                   </View>
                 )}
-                <Note>
-                  Fresh statements use the office computer. The office can pause
-                  a request if someone is working.
-                </Note>
-              </ScrollView>
+              </HomeDashboard>
             ) : screen === "outstanding" ? (
               <FlatList
                 data={party || report ? [] : parties}
@@ -1121,10 +1090,19 @@ function OfficeApp() {
                       </View>
                     )}
                     {report && reportCard(report)}
-                    {party && report?.status === "ready" && party.id === report.party_id && (
-                      <Button title="New statement for this party" secondary disabled={busy}
-                        onPress={() => { setReport(null); setAsOf(todayIndia()); }} />
-                    )}
+                    {party &&
+                      report?.status === "ready" &&
+                      party.id === report.party_id && (
+                        <Button
+                          title="New statement for this party"
+                          secondary
+                          disabled={busy}
+                          onPress={() => {
+                            setReport(null);
+                            setAsOf(todayIndia());
+                          }}
+                        />
+                      )}
                     {report && (
                       <Button
                         title="Get another statement"
@@ -1416,16 +1394,11 @@ function OfficeApp() {
                   Keep Tailscale connected on your phone. You can use the app
                   from anywhere with internet access.
                 </Note>
-                <View style={styles.card}>
-                  <Text style={styles.sectionTitle}>
-                    Need a fresh statement?
-                  </Text>
-                  <Text style={styles.muted}>
-                    The office PC must be powered on, online and unlocked, with
-                    BUSY logged in. Someone at the office can cancel a request
-                    before it starts.
-                  </Text>
-                </View>
+                <Note details>
+                  The office PC must be powered on, online and unlocked, with
+                  BUSY logged in. Someone at the office can cancel a request
+                  before it starts.
+                </Note>
                 <Pressable
                   accessibilityRole="button"
                   disabled={busy}
@@ -1464,7 +1437,7 @@ function OfficeApp() {
                   <Text style={styles.dangerText}>Disconnect this phone</Text>
                 </Pressable>
                 <Text style={[styles.noteText, { textAlign: "center" }]}>
-                  H.S. Traders Office · Version 1.5.1
+                  H.S. Traders Office · Version 1.6.0
                 </Text>
               </ScrollView>
             )}
@@ -1555,3 +1528,5 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+
+void SplashScreen.preventAutoHideAsync().catch(() => {});

@@ -24,12 +24,15 @@ const icons = {
 };
 async function main() {
   const logo = await sharp(source, { density: 160 }).trim({ background: '#ffffff', threshold: 20 }).png().toBuffer();
-  await sharp(logo).resize({ height: 600 }).toFile(path.join(root, 'logo.png'));
-  for (const [name, size] of [['icon', 820], ['adaptive-icon', 590]]) {
-    const foreground = await sharp(logo).resize({ width: size, height: size, fit: 'inside' }).toBuffer();
-    await sharp({ create: { width: 1024, height: 1024, channels: 4, background: '#ffffff' } })
-      .composite([{ input: foreground, gravity: 'centre' }]).png().toFile(path.join(root, `${name}.png`));
-  }
+  const mark = await sharp(logo).resize({ width: 430, height: 620, fit: 'inside' }).toBuffer();
+  const circle = Buffer.from('<svg width="1024" height="1024"><circle cx="512" cy="512" r="500" fill="white"/><circle cx="512" cy="512" r="498" fill="none" stroke="#dbe5ed" stroke-width="4"/></svg>');
+  const badge = await sharp({ create: { width: 1024, height: 1024, channels: 4, background: '#00000000' } })
+    .composite([{ input: circle }, { input: mark, gravity: 'centre' }]).png().toBuffer();
+  await sharp(badge).resize(400, 400).toFile(path.join(root, 'logo.png'));
+  await sharp(badge).toFile(path.join(root, 'icon.png'));
+  await sharp(badge).resize(640, 640).extend({ top: 192, bottom: 192, left: 192, right: 192, background: '#00000000' })
+    .toFile(path.join(root, 'adaptive-icon.png'));
+  await sharp(badge).resize(288, 288).toFile(path.join(root, 'splash-icon.png'));
   for (const [name, paths] of Object.entries(icons)) {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0d2b4e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
     await sharp(Buffer.from(svg)).resize(96, 96).png().toFile(path.join(root, `${name}.png`));

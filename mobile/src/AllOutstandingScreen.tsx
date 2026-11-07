@@ -166,7 +166,7 @@ export default forwardRef<
   function create() {
     Alert.alert(
       "Refresh all-account outstanding?",
-      `Read BUSY's All Account report in new1 format, through ${displayDate(asOf)}. The office gets a five-second warning and can cancel.`,
+      `Create a fresh outstanding report for all parties through ${displayDate(asOf)}. The office gets a five-second warning and can cancel.`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -234,9 +234,9 @@ export default forwardRef<
                 disabled={busy || running(report)}
                 onPress={create}
               />
-              <Note>
-                All Account · new1 · pending bills from 16 January 2025. Refresh
-                starts only when you confirm.
+              <Note details>
+                Includes pending bills from 16 January 2025. The office can
+                pause before a fresh report starts.
               </Note>
             </View>
           )}
@@ -336,7 +336,7 @@ export default forwardRef<
               </Text>
               {data.layout === "summary" && (
                 <Note icon="info">
-                  new1 contains account totals only. Use Party statement for
+                  This report contains party totals. Open a party statement for
                   individual bills.
                 </Note>
               )}

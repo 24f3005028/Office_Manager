@@ -45,7 +45,7 @@ export default function NavigationDrawer({
             <Logo />
             <View style={styles.grow}>
               <Text style={styles.brand}>H.S. TRADERS</Text>
-              <Text style={styles.brandSub}>Office menu</Text>
+              <Text style={styles.brandSub}>Your workspace</Text>
             </View>
             <Pressable
               style={styles.menuButton}
@@ -61,28 +61,53 @@ export default function NavigationDrawer({
               [
                 ["home", "home", "Home"],
                 ["outstanding", "statement", "Party statement"],
-                ["allOutstanding", "statement", "All accounts outstanding"],
+                ["allOutstanding", "statement", "All outstanding"],
                 ["invoices", "search", "Find a bill"],
                 ["tools", "calendar", "Office tools"],
-                ["tasks", "check", "Shared tasks"],
+                ["tasks", "check", "Office tasks"],
                 ["history", "history", "Activity"],
                 ["account", "settings", "Account & connection"],
               ] as const
-            ).map(([key, icon, label]) => (
-              <Pressable
-                key={key}
-                accessibilityRole="button"
-                accessibilityState={{ selected: current === key, disabled }}
-                disabled={disabled}
-                onPress={() => onSelect(key)}
-                style={[styles.drawerItem, current === key && styles.navActive]}
-              >
-                <View style={styles.partyMark}>
-                  <Icon name={icon} size={20} />
-                </View>
-                <Text style={[styles.historyTitle, styles.grow]}>{label}</Text>
-                {current === key && <Icon name="check" size={17} />}
-              </Pressable>
+            ).map(([key, icon, label], index) => (
+              <View key={key}>
+                {(index === 1 || index === 4 || index === 7) && (
+                  <Text
+                    style={[
+                      styles.eyebrow,
+                      {
+                        paddingHorizontal: 12,
+                        paddingTop: 18,
+                        paddingBottom: 8,
+                      },
+                    ]}
+                  >
+                    {index === 1
+                      ? "REPORTS"
+                      : index === 4
+                        ? "TEAM & OFFICE"
+                        : "SETTINGS"}
+                  </Text>
+                )}
+                <Pressable
+                  key={key}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: current === key, disabled }}
+                  disabled={disabled}
+                  onPress={() => onSelect(key)}
+                  style={[
+                    styles.drawerItem,
+                    current === key && styles.navActive,
+                  ]}
+                >
+                  <View style={styles.partyMark}>
+                    <Icon name={icon} size={20} />
+                  </View>
+                  <Text style={[styles.historyTitle, styles.grow]}>
+                    {label}
+                  </Text>
+                  {current === key && <Icon name="check" size={17} />}
+                </Pressable>
+              </View>
             ))}
           </ScrollView>
           <Text style={[styles.noteText, { padding: 20 }]}>

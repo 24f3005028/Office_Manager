@@ -18,7 +18,7 @@ import {
 } from "react-native";
 import { Person, todayIndia } from "./api";
 import DateField from "./DateField";
-import { pinHomeWidget, refreshHomeWidgets, widgetsAvailable } from "./homeWidgets";
+import { refreshHomeWidgets } from "./homeWidgets";
 import {
   OfficeTask,
   TaskPerson,
@@ -33,10 +33,14 @@ import {
   syncTaskReminders,
   testTaskReminder,
 } from "./taskReminders";
-import { Button, Heading, Icon, Note, palette, styles } from "./ui";
+import { Button, Disclosure, Heading, Icon, Note, palette, styles } from "./ui";
 
 type Api = <T>(path: string, body?: unknown) => Promise<T>;
-export type TasksHandle = { back: () => boolean; showOpen: (scope: "mine" | "all") => void };
+export type TasksHandle = {
+  newTask: () => void;
+  back: () => boolean;
+  showOpen: (scope: "mine" | "all") => void;
+};
 export default forwardRef<
   TasksHandle,
   { api: Api; person: Person | null; visible: boolean }
@@ -105,6 +109,9 @@ export default forwardRef<
     ref,
     () => ({
       showOpen: (scope) => setFilter(scope),
+      newTask: () => {
+        if (!form) start();
+      },
       back: () => {
         if (busy) return true;
         if (form) {
@@ -211,16 +218,12 @@ export default forwardRef<
       <Heading
         eyebrow="SHARED TASKS"
         title={
-          form
-            ? editing
-              ? "Edit task"
-              : "New office task"
-            : "Office to-do list"
+          form ? (editing ? "Edit task" : "New office task") : "Office tasks"
         }
         subtitle={
           form
             ? "Set a due time and choose who gets reminded."
-            : "Everyone can add tasks and mark shared work done."
+            : "Shared work, organised."
         }
       />
       {error !== "" && (
@@ -233,11 +236,6 @@ export default forwardRef<
       )}
       {notice !== "" && <Note icon="info">{notice}</Note>}
       {busy && <ActivityIndicator color={palette.blue} />}
-      {!form && widgetsAvailable && <Button title="Add tasks home widget" secondary disabled={busy} onPress={() => void run(async () => {
-        const result = await pinHomeWidget("tasks");
-        setNotice(result === "updated" ? "Your existing tasks widget is updated." : result === "requested" ? "Confirm Add on your home-screen prompt. Change My tasks / All tasks under Account & connection → Home-screen widgets."
-          : "Long-press your home screen → Widgets → H.S. Traders Office → Office tasks.");
-      })} />}
       {form ? (
         <View style={styles.card}>
           <View>
@@ -421,9 +419,31 @@ export default forwardRef<
           {shown.map((task) => (
             <View key={task.id} style={styles.card}>
               <View style={styles.row}>
-                <View style={styles.tileIcon}>
-                  <Icon name={task.status === "done" ? "check" : "calendar"} />
-                </View>
+                <Pressable
+                  accessibilityRole="checkbox"
+                  accessibilityLabel={"Mark " + task.title + " done"}
+                  accessibilityState={{
+                    checked: task.status === "done",
+                    disabled: busy || task.status !== "open",
+                  }}
+                  disabled={busy || task.status !== "open"}
+                  onPress={() => complete(task)}
+                  style={styles.tileIcon}
+                >
+                  {task.status === "done" ? (
+                    <Icon name="check" color={palette.teal} />
+                  ) : (
+                    <View
+                      style={{
+                        width: 22,
+                        height: 22,
+                        borderRadius: 11,
+                        borderWidth: 2,
+                        borderColor: palette.blue,
+                      }}
+                    />
+                  )}
+                </Pressable>
                 <Text style={[styles.cardTitle, styles.grow]}>
                   {task.title}
                 </Text>
@@ -445,81 +465,81 @@ export default forwardRef<
                     : "Due"}{" "}
                 · {taskDate(task.due_at)} IST
               </Text>
-              {task.notes !== "" && (
-                <Text style={styles.muted}>{task.notes}</Text>
+              {task.repeat_rule !== "none" && (
+                <View style={styles.pill}>
+                  <Icon name="history" size={13} />
+                  <Text style={styles.pillText}>{task.repeat_rule}</Text>
+                </View>
               )}
-              <Text style={styles.noteText}>
-                Repeat:{" "}
-                {task.repeat_rule === "none" ? "Once" : task.repeat_rule} ·
-                Added by {task.creator_name ?? "Office user"}
-              </Text>
-              <Text style={styles.noteText}>
-                Reminders:{" "}
-                {task.assignees
-                  .map(
-                    (id) =>
-                      people.find((member) => member.id === id)?.name ??
-                      "Former user",
-                  )
-                  .join(", ") || "No recipients"}
-              </Text>
-              {task.last_completed_at && (
-                <Text style={styles.noteText}>
-                  Last done {taskDate(task.last_completed_at)}
-                  {task.completed_by_name
-                    ? ` by ${task.completed_by_name}`
-                    : ""}{" "}
-                  · {task.completed_count} completed
-                </Text>
-              )}
-              {task.status === "open" && (
-                <Button
-                  title="Mark done"
-                  icon="check"
-                  disabled={busy}
-                  onPress={() => complete(task)}
-                />
-              )}
-              {(task.created_by === person?.id || person?.can_invite_users) &&
-                task.status === "open" && (
-                  <View style={styles.smallActions}>
-                    <View style={styles.grow}>
-                      <Button
-                        title="Edit"
-                        secondary
-                        disabled={busy}
-                        onPress={() => start(task)}
-                      />
-                    </View>
-                    <View style={styles.grow}>
-                      <Button
-                        title="Cancel task"
-                        secondary
-                        disabled={busy}
-                        onPress={() =>
-                          Alert.alert(
-                            "Cancel this task?",
-                            "It will be removed from the shared list and its reminders will stop after phones sync.",
-                            [
-                              { text: "Keep task", style: "cancel" },
-                              {
-                                text: "Cancel task",
-                                style: "destructive",
-                                onPress: () =>
-                                  void run(async () => {
-                                    await api(`/tasks/${task.id}/cancel`, {
-                                      version: task.version,
-                                    });
-                                    await refresh();
-                                  }),
-                              },
-                            ],
-                          )
-                        }
-                      />
-                    </View>
-                  </View>
+              <Disclosure title="Details & options">
+                {task.notes !== "" && (
+                  <Text style={styles.muted}>{task.notes}</Text>
                 )}
+                <Text style={styles.noteText}>
+                  Repeat:{" "}
+                  {task.repeat_rule === "none" ? "Once" : task.repeat_rule} ·
+                  Added by {task.creator_name ?? "Office user"}
+                </Text>
+                <Text style={styles.noteText}>
+                  Reminders:{" "}
+                  {task.assignees
+                    .map(
+                      (id) =>
+                        people.find((member) => member.id === id)?.name ??
+                        "Former user",
+                    )
+                    .join(", ") || "No recipients"}
+                </Text>
+                {task.last_completed_at && (
+                  <Text style={styles.noteText}>
+                    Last done {taskDate(task.last_completed_at)}
+                    {task.completed_by_name
+                      ? ` by ${task.completed_by_name}`
+                      : ""}{" "}
+                    · {task.completed_count} completed
+                  </Text>
+                )}
+                {(task.created_by === person?.id || person?.can_invite_users) &&
+                  task.status === "open" && (
+                    <View style={styles.smallActions}>
+                      <View style={styles.grow}>
+                        <Button
+                          title="Edit"
+                          secondary
+                          disabled={busy}
+                          onPress={() => start(task)}
+                        />
+                      </View>
+                      <View style={styles.grow}>
+                        <Button
+                          title="Cancel task"
+                          secondary
+                          disabled={busy}
+                          onPress={() =>
+                            Alert.alert(
+                              "Cancel this task?",
+                              "It will be removed from the shared list and its reminders will stop after phones sync.",
+                              [
+                                { text: "Keep task", style: "cancel" },
+                                {
+                                  text: "Cancel task",
+                                  style: "destructive",
+                                  onPress: () =>
+                                    void run(async () => {
+                                      await api(`/tasks/${task.id}/cancel`, {
+                                        version: task.version,
+                                      });
+                                      await refresh();
+                                    }),
+                                },
+                              ],
+                            )
+                          }
+                        />
+                      </View>
+                    </View>
+                  )}
+              </Disclosure>
             </View>
           ))}
           {!shown.length && (
@@ -531,61 +551,63 @@ export default forwardRef<
               </Text>
             </View>
           )}
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Reminders on this phone</Text>
-            <Text style={styles.muted}>
-              {enabled
-                ? "Enabled for your selected tasks."
-                : "Off. Enable to receive reminders for tasks assigned to you."}
-            </Text>
-            <Button
-              title={enabled ? "Refresh reminders" : "Enable phone reminders"}
-              secondary
-              icon="calendar"
-              disabled={busy}
-              onPress={() =>
-                void run(async () => {
-                  setNotice(await enableTaskReminders());
-                  setEnabled(await reminderStatus());
-                })
-              }
-            />
-            {enabled && (
+          <Disclosure title="Reminders on this phone">
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>Phone reminders</Text>
+              <Text style={styles.muted}>
+                {enabled
+                  ? "Enabled for your selected tasks."
+                  : "Off. Enable to receive reminders for tasks assigned to you."}
+              </Text>
               <Button
-                title="Test notification"
+                title={enabled ? "Refresh reminders" : "Enable phone reminders"}
                 secondary
-                icon="check"
+                icon="calendar"
                 disabled={busy}
                 onPress={() =>
                   void run(async () => {
-                    await testTaskReminder();
-                    setNotice(
-                      "Test reminder scheduled for a few seconds from now. Android may delay it under battery restrictions.",
-                    );
+                    setNotice(await enableTaskReminders());
+                    setEnabled(await reminderStatus());
                   })
                 }
               />
-            )}
-            {enabled && (
-              <Button
-                title="Turn reminders off"
-                secondary
-                disabled={busy}
-                onPress={() =>
-                  void run(async () => {
-                    await stopTaskReminders();
-                    setEnabled(false);
-                  })
-                }
-              />
-            )}
-            <Note icon="info">
-              Background refresh takes 15 minutes or longer. Keep Tailscale
-              connected. Android battery restrictions or force-stopping the app
-              can delay reminders; open the app to refresh. Repeats move to the
-              next due date when marked done.
-            </Note>
-          </View>
+              {enabled && (
+                <Button
+                  title="Test notification"
+                  secondary
+                  icon="check"
+                  disabled={busy}
+                  onPress={() =>
+                    void run(async () => {
+                      await testTaskReminder();
+                      setNotice(
+                        "Test reminder scheduled for a few seconds from now. Android may delay it under battery restrictions.",
+                      );
+                    })
+                  }
+                />
+              )}
+              {enabled && (
+                <Button
+                  title="Turn reminders off"
+                  secondary
+                  disabled={busy}
+                  onPress={() =>
+                    void run(async () => {
+                      await stopTaskReminders();
+                      setEnabled(false);
+                    })
+                  }
+                />
+              )}
+              <Note details icon="info">
+                Background refresh takes 15 minutes or longer. Keep Tailscale
+                connected. Android battery restrictions or force-stopping the
+                app can delay reminders; open the app to refresh. Repeats move
+                to the next due date when marked done.
+              </Note>
+            </View>
+          </Disclosure>
         </>
       )}
     </ScrollView>
