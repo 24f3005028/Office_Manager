@@ -1,0 +1,22 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.hstraders.documents'
+version = '1.0.0'
+
+android {
+  namespace 'com.hstraders.documents'
+  testOptions {
+    unitTests.includeAndroidResources = true
+    unitTests.all {
+      systemProperty 'robolectric.dependency.repo.url', 'https://repo.maven.apache.org/maven2'
+    }
+  }
+}
+
+dependencies {
+  testImplementation 'junit:junit:4.13.2'
+  testImplementation 'org.robolectric:robolectric:4.17'
+}

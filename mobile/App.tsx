@@ -43,7 +43,7 @@ import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-import * as Print from "expo-print";
+import { openPdf } from "./src/pdfViewer";
 import {
   Invoice,
   officeUrl,
@@ -486,7 +486,7 @@ function OfficeApp() {
           "Your PDF was saved in the folder you selected.",
         );
       } else if (mode === "open") {
-        await Print.printAsync({ uri: target });
+        await openPdf(target);
       } else if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(target, {
           mimeType: "application/pdf",
@@ -1437,7 +1437,7 @@ function OfficeApp() {
                   <Text style={styles.dangerText}>Disconnect this phone</Text>
                 </Pressable>
                 <Text style={[styles.noteText, { textAlign: "center" }]}>
-                  H.S. Traders Office · Version 1.6.0
+                  H.S. Traders Office · Version 1.6.1
                 </Text>
               </ScrollView>
             )}
