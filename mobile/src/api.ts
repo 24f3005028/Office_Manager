@@ -39,7 +39,12 @@ export interface Invoice {
   conflicting_copies: boolean;
 }
 export function officeUrl(value: string): string {
-  const url = new URL(value.trim());
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    throw new Error("Enter the full office HTTPS address provided by the office.");
+  }
   if (
     url.protocol !== "https:" ||
     url.username ||
@@ -80,7 +85,7 @@ export async function request<T>(
         : response.status === 401
           ? "Access expired or was revoked. Ask the office for a new invite."
           : response.status >= 500
-            ? "The office service is offline or restarting. Start Office Dashboard on the office PC, then refresh this screen."
+            ? "The office service is offline or restarting. Start Office Dashboard and check the tunnel on the office PC."
             : "The office returned an incomplete response. Refresh this screen; if it continues, check Office Dashboard on the office PC.";
     let data: unknown;
     try {
@@ -102,7 +107,7 @@ export async function request<T>(
       /UnknownHostException|Unable to resolve host/i.test(error.message)
     ) {
       throw new Error(
-        "Cannot find the office address. Check that Tailscale is connected. If Android Private DNS is enabled, try setting it to Automatic or Off.",
+        "Cannot find the office address. Check your connection and ask the office for its current HTTPS address.",
       );
     }
     if (
@@ -112,7 +117,7 @@ export async function request<T>(
     ) {
       throw new Error(
         body === undefined
-          ? "Cannot reach the office. Check Tailscale and your connection, then refresh this screen."
+          ? "Cannot reach the office. Check your internet connection and the office HTTPS address."
           : "Connection lost before confirmation. Check the result in Activity, Office requests or Shared tasks before trying again.",
       );
     }

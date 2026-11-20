@@ -20,13 +20,28 @@ Expo / React Native / TypeScript. The app connects only to an HTTPS mobile gatew
 
 1. Start `Start-Office.cmd`. It starts the mobile-only gateway on `127.0.0.1:8002` alongside the existing services. It does not generate reports at startup.
 2. Open Settings → Manage mobile access in the dashboard. Import BUSY's List of Accounts Excel export when the party list changes. Only debtor and creditor names are stored.
-3. Install/sign in to Tailscale on the office PC and approved phones. Confirm plan eligibility and limits with Tailscale; this repository does not start a paid subscription.
-4. Run `scripts/Enable-MobileAccess.ps1` after approving the private remote endpoint. It proxies only port 8002 using private Tailscale Serve, never public Funnel. Do not proxy ports 8000, 3000 or 3001. Remove broad tailnet policies and allow only approved users/devices to the office HTTPS port.
-5. Create a personal invite with name and international WhatsApp number. It expires in 15 minutes and works once. Enter the private office HTTPS address and invite in the Android app. Sessions expire after 30 days; the owner can revoke sooner.
+3. Install the [official `cloudflared` Windows client](https://developers.cloudflare.com/tunnel/downloads/) on the office PC or put `cloudflared.exe` in `data/cloudflare/`. Run the command below from the repository root and leave its terminal open. It uses a free Quick Tunnel, which needs no Cloudflare account, domain, or payment details.
+4. Share the `https://…trycloudflare.com` address printed by Cloudflare with approved users. Install the signed APK from `output/android/HS-Traders-Office.apk` via USB, wireless ADB, or private file sharing. The public tunnel serves only `/mobile/v1/`. The desktop dashboard, bridge, and installer stay off the tunnel.
+5. Create a personal invite with name and international WhatsApp number. It expires in 15 minutes and works once. Enter the office HTTPS address and invite in the Android app. Sessions expire after 30 days; the owner can revoke sooner.
 
-The phone can download the APK from the private office address followed by `/install/android.apk` while connected to Tailscale. The release build prefills the office address from the signed-in Tailscale client. Initial APK installation does not require an app session; party lists, reports and invoice PDFs do.
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Enable-MobileAccess.ps1
+```
 
-Set `MOBILE_INVITE_ADMIN_PHONE` only in the ignored office `backend/.env` to the designated approved user's international digits-only number. Empty disables remote invitation creation. Authorization is checked against the authenticated account on every request, and the creator is audited. Raw invite codes are returned once and stored only as hashes. App invites do not grant Tailscale membership.
+The phone uses its existing Wi-Fi or mobile data and DNS settings. The address changes when the Quick Tunnel restarts and Cloudflare provides no uptime guarantee. Share the new address and have signed-in users open **Account & connection → Change office address**. The app checks the new address with their current office session before saving it. Only enter addresses provided directly by the office. A stable Cloudflare hostname requires a named tunnel and a domain configured on Cloudflare. For that setup the Android build can prefill an address via `EXPO_PUBLIC_OFFICE_URL`.
+
+### Fixed office address
+
+For `https://hst-tunnel.brewwithcrew.com`, authorize `brewwithcrew.com` and configure the free named tunnel from the repository root:
+
+```powershell
+.\data\cloudflare\cloudflared.exe tunnel login
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Set-NamedMobileTunnel.ps1
+```
+
+In the `brewwithcrew.com` Cloudflare DNS zone, add a proxied CNAME named `hst-tunnel` with TTL Auto. Use the `<UUID>.cfargotunnel.com` target printed by the script. Double-click the existing **Office WhatsApp Sender** shortcut to start the connector with the dashboard. Click the shortcut again after a Windows restart. In the app, use **Account & connection → Change office address** to switch to the fixed hostname.
+
+Set `MOBILE_INVITE_ADMIN_PHONE` only in the ignored office `backend/.env` to the designated approved user's international digits-only number. Empty disables remote invitation creation. Authorization is checked against the authenticated account on every request, and the creator is audited. Raw invite codes are returned once and stored only as hashes.
 
 The office PC must stay unlocked and BUSY logged into H.S. TRADERS for fresh reports. Each such request shows a five-second native warning; cancel/close/Escape/Enter prevents the request from touching BUSY. Ignoring it permits the request after five seconds. A shared cross-process lock excludes Pouncha automation. Archived invoice reads never operate BUSY. A user may have one active report request at a time.
 
@@ -79,7 +94,7 @@ configuration no longer matches. Keep release optimization enabled.
   → H.S. Traders Office. Android's launcher must confirm adding a widget. Older
   launchers may require the long-press method. Resize by long-pressing the widget.
 - Task data loads automatically using only `/me` and `/tasks` with the existing
-  session and private Tailscale connection. Foreground changes
+  session and office HTTPS connection. Foreground changes
   refresh them; Android background updates are best effort, 15 minutes or longer.
   BUSY exports, Pouncha sync, sends and task writes never run from this worker.
 - Offline reads preserve timestamped task data.
@@ -102,6 +117,6 @@ not packaged in the APK. These checks supplement a real launcher/phone check.
 
 ## Connection and report verification
 
-If the phone reports that the office is unavailable, run `Start-Office.cmd` on the office computer and use **Office → Send bills → Check office connection** (or reopen the Office tab in older versions). The private URL can return 502 while the local services are stopped. Starting Tailscale alone does not start the dashboard services. Version 1.2.2 handles empty/truncated responses without exposing JSON parsing errors and never automatically repeats unconfirmed sends or updates. Run `bun run test` for the client response-handling regression tests.
+If the phone reports that the office is unavailable, check that `Start-Office.cmd` and the tunnel are running on the office PC, then use **Account & connection → Check office connection**. If the tunnel restarted, check its terminal for the new address. The URL can return 502 while the local gateway is stopped. The app never automatically repeats unconfirmed sends or updates. Run `bun run test` for the client response-handling regression tests.
 
 Native BUSY report navigation/PDF save must pass `backend/scripts/verify_mobile_report.py` on the office desktop before fresh-report generation can be considered verified. Mock API tests do not substitute for this check. Real phone cellular-network access and a real WhatsApp delivery require the owner's account/device setup. No actual WhatsApp message is sent by tests.

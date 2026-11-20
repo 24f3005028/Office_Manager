@@ -31,6 +31,7 @@ import {
   accountReportRunning,
   currentAccountYear,
   formatAccountMoney,
+  partyNameFilter,
 } from "./accountModel";
 import DateField from "./DateField";
 import {
@@ -309,10 +310,8 @@ export default forwardRef<
       switchMode("ledger");
     });
   }
-  const shownBalances =
-    balances?.accounts.filter((row) =>
-      row.name.toLowerCase().includes(balanceQuery.trim().toLowerCase()),
-    ) ?? [];
+  const matchesBalanceName = partyNameFilter(balanceQuery);
+  const shownBalances = balances?.accounts.filter((row) => matchesBalanceName(row.name)) ?? [];
   const maxDate = new Date(options.as_of + "T23:59:00");
   return (
     <>

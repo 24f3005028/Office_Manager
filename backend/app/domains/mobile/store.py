@@ -5,12 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import sqlite3
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
 from app.db import Database
+from app.domains.mobile.party_search import PartySearchResult, rank_names
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS mobile_users (
@@ -101,8 +103,6 @@ class MobileStore:
             )
 
     def pair(self, invite: str, phone: str | None = None) -> dict[str, str] | None:
-        token = secrets.token_urlsafe(48)
-        expires = (datetime.now(UTC) + timedelta(days=30)).isoformat()
         with closing(self.database.connect()) as db, db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
@@ -119,11 +119,23 @@ class MobileStore:
                     "Check the country code and number with the office."
                 )
             db.execute("DELETE FROM mobile_tokens WHERE hash=?", (digest(invite),))
-            db.execute(
-                "INSERT INTO mobile_tokens VALUES (?,?,?,?)",
-                (digest(token), row["user_id"], "session", expires),
-            )
+            return self.issue_session(db, row["user_id"])
+
+    @staticmethod
+    def issue_session(db: sqlite3.Connection, user_id: str) -> dict[str, str]:
+        token = secrets.token_urlsafe(48)
+        expires = (datetime.now(UTC) + timedelta(days=30)).isoformat()
+        db.execute(
+            "INSERT INTO mobile_tokens VALUES (?,?,?,?)",
+            (digest(token), user_id, "session", expires),
+        )
         return {"token": token, "expires_at": expires}
+
+    def add_user(self, name: str, phone: str) -> str:
+        user_id = uuid4().hex
+        with closing(self.database.connect()) as db, db:
+            db.execute("INSERT INTO mobile_users VALUES (?,?,?,1,?)", (user_id, name, phone, now()))
+        return user_id
 
     def authenticate(self, token: str) -> dict[str, Any] | None:
         with closing(self.database.connect()) as db:
@@ -199,15 +211,17 @@ class MobileStore:
             )
 
     def parties(self, query: str = "") -> list[dict[str, str]]:
+        return self.search_parties(query)["matches"]
+
+    def search_parties(self, query: str, *, suggest: bool = False) -> PartySearchResult:
+        query = query.strip()
         with closing(self.database.connect()) as db:
-            return [
-                dict(row)
-                for row in db.execute(
-                    "SELECT * FROM mobile_parties WHERE instr(lower(name),lower(?))>0 "
-                    "ORDER BY name LIMIT 100",
-                    (query,),
-                )
-            ]
+            if not query:
+                rows = db.execute("SELECT * FROM mobile_parties ORDER BY name LIMIT 100")
+                return {"matches": [dict(row) for row in rows], "suggestions": []}
+            rows = db.execute("SELECT * FROM mobile_parties ORDER BY name")
+            matches, suggestions = rank_names((dict(row) for row in rows), query, suggest=suggest)
+            return {"matches": matches, "suggestions": suggestions}
 
     def party(self, party_id: str) -> dict[str, str] | None:
         with closing(self.database.connect()) as db:

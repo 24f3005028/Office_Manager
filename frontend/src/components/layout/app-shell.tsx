@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon, type IconName } from "./icons";
+import { GoogleAccountButton } from "./google-gate";
 
 const navigation: { href: string; title: string; icon: IconName }[] = [
   { href: "/", title: "Home", icon: "home" },
@@ -24,7 +25,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <nav className="app-nav" aria-label="Main navigation">
         {navigation.map((item) => <Link key={item.href} href={item.href} className={pathname === item.href ? "active" : ""} aria-current={pathname === item.href ? "page" : undefined}><Icon name={item.icon} /><span>{item.title}</span></Link>)}
       </nav>
-      <span className="header-note">On this computer</span>
+      <GoogleAccountButton />
     </div></header>
     <main className="page-container" id="main-content">{children}</main>
     <footer className="app-footer"><span>Office document dashboard</span><span>Need to change folders or connect WhatsApp? <Link href="/settings">Open settings</Link></span></footer>

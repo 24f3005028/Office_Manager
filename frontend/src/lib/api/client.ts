@@ -16,7 +16,7 @@ import type {
 
 export const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000"
-).replace(/\/$/, "");
+).replace(/\/$/, "").replace("http://localhost:8000", "http://127.0.0.1:8000");
 
 export class ApiError extends Error {
   readonly status: number;
@@ -28,12 +28,13 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+export async function request<T>(path: string, options?: RequestInit): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...options,
       cache: "no-store",
+      credentials: "include",
       headers: {
         Accept: "application/json",
         ...options?.headers,
@@ -117,7 +118,7 @@ export const api = {
   getQr: async () => {
     let response: Response;
     try {
-      response = await fetch(`${API_BASE_URL}/api/whatsapp/qr`, { cache: "no-store" });
+      response = await fetch(`${API_BASE_URL}/api/whatsapp/qr`, { cache: "no-store", credentials: "include" });
     } catch {
       throw new ApiError("The QR endpoint could not be reached.", 0);
     }

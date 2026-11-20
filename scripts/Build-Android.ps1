@@ -12,13 +12,6 @@ $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
 $env:GRADLE_USER_HOME = Join-Path $repo '.g'
 $env:Path = "$env:JAVA_HOME\bin;$env:ANDROID_HOME\platform-tools;$env:Path"
 $env:CI = '1'
-$tailscale = Join-Path $env:ProgramFiles 'Tailscale/tailscale.exe'
-if (!$env:EXPO_PUBLIC_OFFICE_URL -and (Test-Path -LiteralPath $tailscale)) {
-    $network = & $tailscale status --json | ConvertFrom-Json
-    if ($network.BackendState -eq 'Running' -and $network.Self.DNSName) {
-        $env:EXPO_PUBLIC_OFFICE_URL = 'https://' + $network.Self.DNSName.TrimEnd('.')
-    }
-}
 Push-Location -LiteralPath $mobile
 try {
     & bun run typecheck
@@ -85,6 +78,32 @@ try {
     $gradle = [regex]::Replace($gradle, 'versionCode\s+\d+', ('versionCode ' + $appConfiguration.android.versionCode))
     $gradle = [regex]::Replace($gradle, 'versionName\s+"[^"]+"', ('versionName "' + $appConfiguration.version + '"'))
     [IO.File]::WriteAllText($gradlePath, $gradle, (New-Object Text.UTF8Encoding($false)))
+    # Keep launch and native picker colors in sync when retaining the native project.
+    $colorsPath = Join-Path $mobile 'android/app/src/main/res/values/colors.xml'
+    $colors = Get-Content -LiteralPath $colorsPath -Raw
+    if ($appConfiguration.primaryColor) {
+        if ($appConfiguration.primaryColor -notmatch '^#[0-9a-fA-F]{6}$') { throw 'Invalid primary color.' }
+        $colors = [regex]::Replace($colors, '(?<=<color name="colorPrimary">)[^<]+', $appConfiguration.primaryColor)
+    }
+    foreach ($plugin in $appConfiguration.plugins) {
+        if ($plugin -is [array] -and $plugin[0] -eq 'expo-splash-screen') {
+            $splashColor = $plugin[1].backgroundColor
+            if ($splashColor -notmatch '^#[0-9a-fA-F]{6}$') { throw 'Invalid splash color.' }
+            $colors = [regex]::Replace($colors, '(?<=<color name="splashscreen_background">)[^<]+', $splashColor)
+        }
+    }
+    [IO.File]::WriteAllText($colorsPath, $colors, (New-Object Text.UTF8Encoding($false)))
+    $stylesPath = Join-Path $mobile 'android/app/src/main/res/values/styles.xml'
+    $nativeStyles = Get-Content -LiteralPath $stylesPath -Raw
+    if (!$nativeStyles.Contains('<item name="colorAccent">')) {
+        $accentItems = @'
+$1
+    <item name="colorAccent">@color/colorPrimary</item>
+    <item name="android:colorAccent">@color/colorPrimary</item>
+'@
+        $nativeStyles = [regex]::Replace($nativeStyles, '(<style name="AppTheme"[^>]*>)', $accentItems)
+        [IO.File]::WriteAllText($stylesPath, $nativeStyles, (New-Object Text.UTF8Encoding($false)))
+    }
     # Build both common phone architectures; no emulator-only libraries.
     Push-Location -LiteralPath (Join-Path $mobile 'android')
     try {

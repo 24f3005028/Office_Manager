@@ -15,3 +15,103 @@
 @media(max-width:850px){.header-inner{flex-wrap:wrap;gap:12px;padding:20px 24px 12px}.app-nav{width:100%;justify-content:space-between}.app-nav a{flex:1;justify-content:center}.page-container{padding:28px 24px 36px}.app-footer{padding:18px 24px}.pouncha-layout,.setup-layout{grid-template-columns:1fr}.pouncha-sheet-card{order:-1}.sheet-summary{grid-template-columns:repeat(3,1fr)}.setup-side-column{grid-template-columns:1fr 1fr}.control-column{gap:16px}.filter-panel,.contact-panel{padding:22px}.task-card{padding:24px}.task-card-top{flex-wrap:wrap;gap:12px}.home-help{flex-wrap:wrap}.home-help .button{margin-left:0}.busy-sync-content{grid-template-columns:1fr}}
 @media(max-width:620px){body{font-size:15px}.header-inner{padding:16px 16px 10px}.brand-lockup strong{font-size:17px}.brand-mark{width:37px;height:37px}.app-nav{gap:3px}.app-nav a{flex-direction:column;gap:5px;padding:9px 5px;font-size:11px}.app-nav svg{width:20px;height:20px}.page-container{padding:25px 16px 32px}.app-footer{padding:18px 16px;flex-direction:column}.home-hero h1{font-size:30px}.task-grid,.control-column{grid-template-columns:1fr}.task-card{padding:23px}.task-card h2{font-size:24px}.task-card-top{flex-wrap:nowrap}.task-icon{width:48px;height:48px}.home-help{padding:20px}.home-help>div{flex:1}.home-help .button{width:100%}.home-summary{gap:15px}.dashboard-intro,.setup-header{align-items:flex-start;flex-direction:column;gap:16px}.dashboard-intro h2,.setup-header h2{font-size:29px}.date-stamp{display:none}.filter-panel,.contact-panel,.preview-panel,.job-card,.pouncha-card,.setup-main-card,.setup-checklist-card,.setup-note-card,.settings-connection-card,.settings-folders-card{padding:20px}.section-heading h2{font-size:20px}.connection-card{padding:16px}.connection-body{width:100%}.connection-detail{font-size:13px}.date-inputs{gap:7px;grid-template-columns:1fr 1fr}.date-inputs input{font-size:13px;padding:9px 7px!important}.date-arrow{display:none}.checkbox-list{gap:6px}.checkbox-card{padding:10px 9px;font-size:13px}.preview-footer{flex-direction:column;align-items:stretch}.preview-footer .button{width:100%}.job-file-list li{flex-wrap:wrap}.job-file-list small{padding-left:34px;width:100%}.modal-backdrop{padding:12px}.confirmation-modal{padding:23px}.modal-actions .button{flex:1;padding:11px}.setup-progress{gap:3px}.setup-progress-step{font-size:12px;padding:8px 3px;gap:6px}.setup-side-column{grid-template-columns:1fr}.setup-main-heading{flex-wrap:wrap}.setup-qr-block{flex-direction:column;align-items:flex-start}.setup-qr{width:205px;height:205px;align-self:center}.setup-success-panel,.contacts-imported-panel,.setup-complete-banner{flex-wrap:wrap}.setup-success-panel .button,.setup-complete-banner .button{width:100%}.folder-add-row{grid-template-columns:minmax(0,1fr) auto}.folder-settings-footer{align-items:stretch;flex-direction:column}.busy-sync-toggle,.busy-sync-body{padding:16px}.busy-sync-pill{display:none}.sheet-summary{grid-template-columns:1fr 1fr}.sheet-summary>div:first-child{grid-column:1/-1}.pouncha-fields{gap:12px}.run-metrics{grid-template-columns:1fr 1fr}.pouncha-result-title h2{font-size:20px}.pouncha-history button{flex-wrap:wrap;gap:8px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation-duration:1ms!important;animation-iteration-count:1!important}}
+
+.office-signin {
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(ellipse at 50% 0%, #e1ebff, transparent 70%), var(--paper);
+}
+.office-signin-card {
+  width: min(100%, 460px);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-top: 4px solid var(--forest);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: 0 18px 48px #142c5714;
+}
+.office-signin-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 32px 0;
+  font-weight: 700;
+}
+.office-signin-brand img { object-fit: contain; border-radius: 10px; }
+.office-signin-content { padding: 24px 32px 32px; }
+.office-signin-content h1 { font-size: clamp(26px, 5vw, 34px); text-wrap: balance; }
+.office-signin-content > p:not(.notice), .office-signin-action > p { color: var(--ink-soft); }
+.office-signin-content .notice { margin-top: 18px; }
+.office-signin-action { margin-top: 24px; min-height: 48px; }
+.google-signin-link { display: inline-flex; max-width: 100%; border-radius: 6px; }
+.google-signin-link:hover { box-shadow: 0 0 0 3px var(--mint); }
+.google-signin-link img { max-width: 100%; height: auto; }
+.office-signin-footer { padding: 15px 32px; background: #f8faff; border-top: 1px solid var(--line); color: var(--ink-soft); font-size: 14px; }
+
+.google-account-menu { position: relative; }
+.google-account-menu > summary {
+  list-style: none;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #b6cdf5;
+  border-radius: 50%;
+  background: var(--mint);
+  color: var(--forest-dark);
+  font-weight: 700;
+  cursor: pointer;
+}
+.google-account-menu > summary::-webkit-details-marker { display: none; }
+.google-account-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 10;
+  display: grid;
+  gap: 8px;
+  width: min(280px, calc(100vw - 32px));
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px #142c5726;
+  overflow-wrap: anywhere;
+}
+.google-account-popover > span { color: var(--ink-soft); font-size: 14px; }
+.google-account-popover .button { margin-top: 4px; }
+
+.google-access { display: grid; gap: 20px; }
+.google-access-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.google-access-header .button { flex-shrink: 0; }
+.google-access-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.google-access-grid > section { min-width: 0; }
+.google-access-form { display: grid; gap: 10px; margin-top: 20px; }
+.google-access-form label { font-weight: 600; font-size: 14px; }
+.google-access-form .button { justify-self: start; margin-top: 6px; }
+.google-access-choice { display: flex; align-items: center; gap: 10px; margin: 5px 0; }
+.google-access-choice input { margin: 0; }
+.google-access-back { display: inline-block; margin-top: 14px; }
+.google-grant-list { list-style: none; margin: 14px 0 0; padding: 0; }
+.google-grant-list > li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 14px; padding: 13px 0; border-top: 1px solid var(--line); }
+.google-grant-identity { min-width: 0; display: grid; overflow-wrap: anywhere; }
+.google-grant-identity small { color: var(--ink-soft); }
+.google-grant-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.google-grant-badges span { padding: 4px 9px; border-radius: 6px; background: var(--mint); color: var(--forest-dark); font-size: 12px; font-weight: 600; }
+.google-grant-badges .google-grant-inactive { background: var(--paper); color: var(--ink-soft); }
+@media (max-width: 850px) {
+  .google-account-menu { margin-left: auto; order: -1; }
+  .header-inner:has(.google-account-menu) .brand-lockup { order: -2; }
+}
+@media (max-width: 660px) {
+  .google-access-header { align-items: flex-start; flex-direction: column; }
+  .google-access-grid { grid-template-columns: 1fr; }
+  .google-grant-list > li { grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; }
+  .google-grant-badges { grid-row: 2; grid-column: 1; }
+  .google-grant-list .button { grid-row: 1 / span 2; grid-column: 2; }
+  .office-signin-brand { padding: 22px 24px 0; }
+  .office-signin-content { padding: 20px 24px 26px; }
+  .office-signin-footer { padding-inline: 24px; }
+}

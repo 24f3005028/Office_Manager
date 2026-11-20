@@ -17,6 +17,7 @@ import {
   View,
 } from "react-native";
 import { Report, todayIndia } from "./api";
+import { partyNameFilter } from "./accountModel";
 import DateField from "./DateField";
 import {
   Button,
@@ -191,10 +192,11 @@ export default forwardRef<
     );
   }
   const needle = query.trim().toLowerCase();
+  const matchesParty = partyNameFilter(query);
   const accounts =
     data?.accounts.filter(
       (account) =>
-        account.party_name.toLowerCase().includes(needle) ||
+        matchesParty(account.party_name) ||
         account.bills.some((bill) =>
           bill.bill_number.toLowerCase().includes(needle),
         ),

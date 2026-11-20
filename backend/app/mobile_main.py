@@ -7,11 +7,12 @@ from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import date
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -22,10 +23,12 @@ from app.domains.mobile.account_reports import report_filename
 from app.domains.mobile.account_routes import install_account_routes
 from app.domains.mobile.invoices import InvoiceCatalogue, invoice_filename
 from app.domains.mobile.office_routes import install_office_routes
+from app.domains.mobile.party_search import PartySearchResult
 from app.domains.mobile.service import MobileService
 from app.domains.mobile.store import MobileStore
 from app.domains.mobile.task_routes import install_task_routes
 from app.domains.settings.service import WorkspaceSettingsService
+from app.office_google import OfficeGoogle, google_router, office_google
 
 
 def build_mobile(settings: Settings) -> MobileService:
@@ -65,6 +68,10 @@ def user(
     request: Request, credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)]
 ) -> dict[str, Any]:
     result = instance(request).store.authenticate(credentials.credentials) if credentials else None
+    auth = office_google(request)
+    if result and credentials and auth.settings.google_oauth_required:
+        if not auth.mobile_session_allowed(credentials.credentials, result["id"]):
+            result = None
     if result is None:
         raise HTTPException(401, "Access expired or was revoked. Ask the office for a new invite.")
     return result
@@ -106,6 +113,9 @@ def create_mobile_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.mobile = service or build_mobile(settings or Settings())
+        app.state.office_google = OfficeGoogle(
+            app.state.mobile.settings, app.state.mobile.store.database
+        )
         app.state.mobile.store.recover()
         app.state.mobile.cleanup_reports()
         try:
@@ -124,27 +134,48 @@ def create_mobile_app(
 
     @app.middleware("http")
     async def protect(request: Request, call_next: Any) -> Any:
-        from starlette.responses import JSONResponse
-
+        path = request.url.path
+        peer = request.client.host if request.client else "unknown"
+        # The Windows launcher disables Uvicorn's forwarded-header parsing and binds
+        # to loopback. Cloudflare sets CF-Connecting-IP at the edge.
+        cloudflare = (
+            request.headers.get("host") == "office-mobile-tunnel"
+            or "cf-ray" in request.headers
+            or "cf-connecting-ip" in request.headers
+        )
+        if cloudflare and not path.startswith("/mobile/v1/"):
+            return JSONResponse({"detail": "Not found."}, status_code=404)
         # Native app uses no Origin header. This service has no browser-based login.
         if request.headers.get("origin"):
             return JSONResponse({"detail": "Browser requests are not allowed."}, status_code=403)
-        host = request.client.host if request.client else "unknown"
-        bucket = host + (":pair" if request.url.path == "/mobile/v1/pair" else ":api")
+        host = peer
+        if cloudflare and peer == "127.0.0.1":
+            try:
+                host = str(ip_address(request.headers.get("cf-connecting-ip", "")))
+            except ValueError:
+                pass
+        is_pair = path == "/mobile/v1/pair" or path in {
+            "/mobile/v1/auth/mobile/start", "/mobile/v1/auth/mobile/exchange",
+        }
+        suffix = ":pair" if is_pair else ":api"
+        bucket = host + suffix
         current = time.monotonic()
+        if bucket not in attempts and len(attempts) >= 2000:
+            for key, timestamps in list(attempts.items()):
+                if not timestamps or timestamps[-1] < current - 60:
+                    del attempts[key]
+            if len(attempts) >= 2000:
+                bucket = "overflow" + suffix
         queue = attempts[bucket]
         while queue and queue[0] < current - 60:
             queue.popleft()
-        if len(queue) >= (10 if bucket.endswith(":pair") else 180):
+        if len(queue) >= (10 if is_pair else 180):
             return JSONResponse(
-                {"detail": "Too many requests. Wait a minute and try again."}, status_code=429
+                {"detail": "Too many requests. Wait a minute and try again."},
+                status_code=429,
+                headers={"Cache-Control": "no-store"},
             )
         queue.append(current)
-        # Bound storage independently of client-controlled forwarded headers.
-        if len(attempts) > 2000:
-            for key in list(attempts):
-                if not attempts[key] or attempts[key][-1] < current - 60:
-                    del attempts[key]
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -152,7 +183,7 @@ def create_mobile_app(
 
     @app.get("/health")
     def health() -> dict[str, Any]:
-        return {"service": "office-mobile", "manual_only": True}
+        return {"service": "office-mobile", "manual_only": True, "cloudflare_ready": True}
 
     @app.get("/install/android.apk")
     def android_app() -> FileResponse:
@@ -171,6 +202,8 @@ def create_mobile_app(
 
     @app.post("/mobile/v1/pair")
     def pair(payload: PairRequest, request: Request) -> dict[str, str]:
+        if office_google(request).settings.google_oauth_required:
+            raise HTTPException(403, "Update the office app and sign in with Google.")
         try:
             result = instance(request).store.pair(payload.invite_code, payload.phone)
         except ValueError as exc:
@@ -185,7 +218,10 @@ def create_mobile_app(
             "id": current["id"],
             "name": current["name"],
             "phone": current["phone"],
-            "can_invite_users": instance(request).can_invite_users(current),
+            "can_invite_users": (
+                not office_google(request).settings.google_oauth_required
+                and instance(request).can_invite_users(current)
+            ),
         }
 
     @app.post("/mobile/v1/invites", status_code=201)
@@ -193,6 +229,8 @@ def create_mobile_app(
         payload: MobileInviteRequest, request: Request, current: CurrentUser
     ) -> dict[str, Any]:
         mobile = instance(request)
+        if office_google(request).settings.google_oauth_required:
+            raise HTTPException(403, "The office owner manages Google access from the dashboard.")
         if not mobile.can_invite_users(current):
             raise HTTPException(
                 403, "Only the designated invite manager can create mobile invites."
@@ -214,9 +252,15 @@ def create_mobile_app(
 
     @app.get("/mobile/v1/parties")
     def parties(
-        request: Request, current: CurrentUser, q: str = Query(default="", max_length=100)
-    ) -> list[dict[str, str]]:
-        return instance(request).store.parties(q)
+        request: Request,
+        current: CurrentUser,
+        q: str = Query(default="", max_length=100),
+        suggest: bool = False,
+    ) -> list[dict[str, str]] | PartySearchResult:
+        store = instance(request).store
+        if suggest:
+            return store.search_parties(q, suggest=True)
+        return store.parties(q)
 
     @app.post("/mobile/v1/reports", status_code=202)
     def report(payload: ReportRequest, request: Request, current: CurrentUser) -> dict[str, Any]:
@@ -316,6 +360,7 @@ def create_mobile_app(
     install_office_routes(app, user)
     install_task_routes(app, user)
     install_account_routes(app, user)
+    app.include_router(google_router("mobile"), prefix="/mobile/v1/auth")
     return app
 
 

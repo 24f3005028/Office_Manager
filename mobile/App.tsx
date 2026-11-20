@@ -7,6 +7,7 @@ import {
   AppState,
   BackHandler,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Keyboard,
   Linking,
@@ -84,17 +85,26 @@ const errorText = (error: unknown) =>
   error instanceof Error
     ? error.message
     : "Something went wrong. Please try again.";
+const DEFAULT_OFFICE_URL = process.env.EXPO_PUBLIC_OFFICE_URL ?? "https://hst-tunnel.brewwithcrew.com";
+const GOOGLE_FLOW_KEY = "office-google-flow";
+type GoogleFlow = { url: string; flow: string; secret: string };
+type PartySearchResult = { matches: Party[]; suggestions: Party[] };
+
 function OfficeApp() {
   const dialog = useAppDialog();
   const [session, setSession] = useState<Session | null>(null),
     [restoring, setRestoring] = useState(true);
   const currentSession = useRef(session);
   currentSession.current = session;
-  const [url, setUrl] = useState(process.env.EXPO_PUBLIC_OFFICE_URL ?? ""),
+  const [url, setUrl] = useState(DEFAULT_OFFICE_URL),
     [code, setCode] = useState(""),
     [countryCode, setCountryCode] = useState("91"),
     [mobileNumber, setMobileNumber] = useState(""),
     [person, setPerson] = useState<Person | null>(null);
+  const [newOfficeAddress, setNewOfficeAddress] = useState<string | null>(null);
+  const [legacyPairing, setLegacyPairing] = useState(false);
+  const [showOfficeAddress, setShowOfficeAddress] = useState(false);
+  const googleExchange = useRef(false);
   const [screen, setScreen] = useState<Screen>("home"),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -104,9 +114,19 @@ function OfficeApp() {
   const partySearchInput = useRef<React.ComponentRef<typeof TextInput>>(null);
   const [widgetSearchFocus, setWidgetSearchFocus] = useState(0);
   const [query, setQuery] = useState(""),
-    [parties, setParties] = useState<Party[]>([]),
+    [partySearch, setPartySearch] = useState<{
+      query: string;
+      session: Session;
+      result: PartySearchResult;
+    } | null>(null),
     [searching, setSearching] = useState(false),
     [party, setParty] = useState<Party | null>(null);
+  const currentSearch =
+    partySearch?.query === query && partySearch.session === session
+      ? partySearch.result
+      : null;
+  const suggestions = currentSearch?.suggestions ?? [];
+  const partyRows = suggestions.length ? suggestions : currentSearch?.matches ?? [];
   const [asOf, setAsOf] = useState(todayIndia()),
     [advanced, setAdvanced] = useState(false),
     [report, setReport] = useState<Report | null>(null);
@@ -144,6 +164,60 @@ function OfficeApp() {
     },
     [session],
   );
+  const finishGoogleSignIn = useCallback(async (link: string | null | undefined) => {
+    if (!link || googleExchange.current) return;
+    const callback = new URL(link);
+    if (callback.protocol !== "hstraders-office:" || callback.hostname !== "google-sign-in") return;
+    googleExchange.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const raw = await SecureStore.getItemAsync(GOOGLE_FLOW_KEY);
+      if (!raw) return;
+      const pending: GoogleFlow = JSON.parse(raw);
+      const code = callback.searchParams.get("code");
+      if (callback.searchParams.get("error") === "denied") {
+        throw new Error("This Google account hasn’t been given mobile access.");
+      }
+      if (!code || callback.searchParams.get("flow") !== pending.flow) {
+        throw new Error("Google sign-in did not finish. Please try again.");
+      }
+      const signedIn = await request<Omit<Session, "url">>(
+        pending.url, "/auth/mobile/exchange", undefined,
+        { flow: pending.flow, secret: pending.secret, code },
+      );
+      const next = { url: pending.url, ...signedIn };
+      await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(next));
+      await SecureStore.deleteItemAsync(GOOGLE_FLOW_KEY).catch(() => {});
+      setUrl(next.url);
+      setSession(next);
+    } catch (reason) {
+      setError(errorText(reason));
+    } finally {
+      googleExchange.current = false;
+      setBusy(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (restoring) return;
+    const listener = Linking.addEventListener("url", ({ url: link }) => {
+      void finishGoogleSignIn(link).catch(() => {});
+    });
+    void Linking.getInitialURL().then(finishGoogleSignIn).catch(() => {});
+    return () => listener.remove();
+  }, [restoring, finishGoogleSignIn]);
+
+  useEffect(() => {
+    if (session || restoring || !url.trim()) return;
+    let current = true;
+    try {
+      void request<{ required: boolean }>(officeUrl(url), "/auth/status")
+        .then((status) => { if (current) setLegacyPairing(!status.required); })
+        .catch(() => { if (current) setLegacyPairing(false); });
+    } catch { setLegacyPairing(false); }
+    return () => { current = false; };
+  }, [session, restoring, url]);
   useEffect(() => {
     mounted.current = true;
     void SecureStore.getItemAsync(SESSION_KEY)
@@ -255,16 +329,36 @@ function OfficeApp() {
           rows.find((row) => row.party_id === "all-accounts") ?? null,
         );
       })
-      .catch((reason) => setError(errorText(reason)));
+      .catch(async (reason) => {
+        if (currentSession.current !== session) return;
+        if (/Access expired or was revoked/.test(errorText(reason))) {
+          await SecureStore.deleteItemAsync(SESSION_KEY);
+          await clearHomeWidgets().catch(() => {});
+          await stopTaskReminders().catch(() => {});
+          setSession(null);
+          setPerson(null);
+          setScreen("home");
+          setError("Sign in again to access the office.");
+        } else setError(errorText(reason));
+      });
   }, [session, api]);
   useEffect(() => {
     if (!session || screen !== "outstanding") return;
     const revision = ++searchRevision.current;
     setSearching(true);
     const timer = setTimeout(() => {
-      void api<Party[]>(`/parties?q=${encodeURIComponent(query)}`)
-        .then((rows) => {
-          if (revision === searchRevision.current) setParties(rows);
+      void api<PartySearchResult | Party[]>(
+        `/parties?suggest=true&q=${encodeURIComponent(query)}`,
+      )
+        .then((result) => {
+          if (revision !== searchRevision.current) return;
+          setPartySearch({
+            query,
+            session,
+            result: Array.isArray(result)
+              ? { matches: result, suggestions: [] }
+              : result,
+          });
         })
         .catch((reason) => {
           if (revision === searchRevision.current) setError(errorText(reason));
@@ -348,6 +442,31 @@ function OfficeApp() {
       await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(next));
       setCode("");
       setSession(next);
+    });
+  }
+  async function signInWithGoogle() {
+    await action(async () => {
+      const base = officeUrl(url);
+      const flow = await request<Omit<GoogleFlow, "url">>(base, "/auth/mobile/start", undefined, {});
+      await SecureStore.setItemAsync(GOOGLE_FLOW_KEY, JSON.stringify({ ...flow, url: base }));
+      await Linking.openURL(base + "/mobile/v1/auth/google/start?flow=" + encodeURIComponent(flow.flow));
+    });
+  }
+  async function changeOfficeAddress() {
+    if (!session || newOfficeAddress === null) return;
+    await action(async () => {
+      const base = officeUrl(newOfficeAddress);
+      const connected = await request<Person>(base, "/me", session.token);
+      if (!connected.id || (person && connected.id !== person.id)) {
+        throw new Error("This address did not recognize your office account.");
+      }
+      const next = { ...session, url: base };
+      await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(next));
+      setUrl(base);
+      setSession(next);
+      setPerson(connected);
+      setNewOfficeAddress(null);
+      void refreshHomeWidgets(true).catch(() => {});
     });
   }
   async function open(next: Screen) {
@@ -680,8 +799,7 @@ function OfficeApp() {
         style={styles.screen}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={styles.header}>
-          {session ? (
+        {session && <View style={styles.header}>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Open navigation menu"
@@ -696,9 +814,6 @@ function OfficeApp() {
               <View style={styles.hamburgerLine} />
               <View style={styles.hamburgerLine} />
             </Pressable>
-          ) : (
-            <Logo />
-          )}
           <View style={styles.headerText}>
             <Text style={styles.brand}>H.S. TRADERS</Text>
             <Text style={styles.brandSub}>Office workspace</Text>
@@ -730,7 +845,7 @@ function OfficeApp() {
               )}
             </Pressable>
           )}
-        </View>
+        </View>}
         {error !== "" && (
           <View accessibilityRole="alert" style={styles.notice}>
             <Icon name="info" color="#a23932" size={20} />
@@ -754,41 +869,42 @@ function OfficeApp() {
         )}
         {!session ? (
           <ScrollView
-            contentContainerStyle={styles.content}
+            contentContainerStyle={[styles.content, styles.signInContent]}
             keyboardShouldPersistTaps="handled"
           >
             <View style={styles.welcome}>
               <Logo large />
               <Text style={styles.welcomeTitle}>
-                {"The office.\nIn your pocket."}
+                H.S. Traders Office
               </Text>
               <Text style={styles.welcomeCopy}>
-                Party statements and bill PDFs, ready whenever you need them.
+                Party statements, saved bills and office tasks.
               </Text>
             </View>
-            <View style={styles.card}>
+            <View style={[styles.card, styles.signInCard]}>
               <View style={styles.sectionHead}>
-                <Text style={styles.sectionTitle}>Connect your phone</Text>
-                <Icon name="shield" size={20} color={palette.teal} />
+                <Text accessibilityRole="header" style={styles.signInTitle}>
+                  {legacyPairing ? "Connect your phone" : "Sign in to the office"}
+                </Text>
               </View>
               <Text style={styles.muted}>
-                Turn on Tailscale and enter the invite from your office
-                dashboard.
+                {legacyPairing ? "Enter the HTTPS address and invite provided by your office." : "Use the Google account approved by your office."}
               </Text>
-              <View>
+              {(showOfficeAddress || legacyPairing) && <View>
                 <Text style={styles.label}>Office address</Text>
                 <TextInput
                   autoCapitalize="none"
                   autoCorrect={false}
                   keyboardType="url"
-                  placeholder="https://your-office.ts.net"
+                  placeholder="https://your-office.trycloudflare.com"
                   value={url}
                   onChangeText={setUrl}
+                  editable={!busy}
                   style={styles.input}
                   accessibilityLabel="Office HTTPS address"
                 />
-              </View>
-              <View>
+              </View>}
+              {legacyPairing && <><View>
                 <Text style={styles.label}>Your WhatsApp number</Text>
                 <View style={styles.row}>
                   <View style={{ width: 105 }}>
@@ -855,11 +971,34 @@ function OfficeApp() {
                 }
                 onPress={() => void pairPhone()}
               />
+              </>}
+              {!legacyPairing && <>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Sign in with Google"
+                  accessibilityState={{ disabled: busy || !url.trim(), busy }}
+                  disabled={busy || !url.trim()}
+                  onPress={() => void signInWithGoogle()}
+                  style={({ pressed }) => [styles.googleSignInButton, (pressed || busy || !url.trim()) && styles.disabled]}
+                >
+                  <Image source={require("./assets/google-sign-in.png")} style={styles.googleSignInImage} resizeMode="contain" />
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: showOfficeAddress }}
+                  disabled={busy}
+                  onPress={() => setShowOfficeAddress((shown) => !shown)}
+                  style={styles.signInConnection}
+                >
+                  <Text style={styles.signInLink}>{showOfficeAddress ? "Hide office address" : "Office connection settings"}</Text>
+                </Pressable>
+              </>}
             </View>
-            <Note>
+            {legacyPairing && <Note>
               Ask the owner for an invite in Mobile access. Each code works once
               and is valid for 15 minutes.
-            </Note>
+            </Note>}
+            {!legacyPairing && <Text style={styles.signInFooter}>Need access? Contact the office owner.</Text>}
           </ScrollView>
         ) : (
           <View style={styles.screen}>
@@ -947,7 +1086,7 @@ function OfficeApp() {
               </HomeDashboard>
             ) : screen === "outstanding" ? (
               <FlatList
-                data={party || report ? [] : parties}
+                data={party || report ? [] : partyRows}
                 keyExtractor={(row) => row.id}
                 keyboardShouldPersistTaps="handled"
                 contentContainerStyle={styles.content}
@@ -990,8 +1129,14 @@ function OfficeApp() {
                             accessibilityLabel="Search party"
                           />
                         </View>
-                        <Text style={styles.eyebrow}>
-                          {query ? "SEARCH RESULTS" : "PARTIES"}
+                        <Text
+                          style={suggestions.length ? styles.label : styles.eyebrow}
+                        >
+                          {suggestions.length
+                            ? "Did you mean?"
+                            : query.trim()
+                              ? "SEARCH RESULTS"
+                              : "PARTIES"}
                         </Text>
                       </>
                     )}
@@ -1338,7 +1483,7 @@ function OfficeApp() {
                     </View>
                   </View>
                   <View style={styles.divider} />
-                  <Text style={styles.label}>Private office address</Text>
+                  <Text style={styles.label}>Office HTTPS address</Text>
                   <Text selectable style={styles.muted}>
                     {session.url}
                   </Text>
@@ -1352,17 +1497,53 @@ function OfficeApp() {
                         setPerson(await api<Person>("/me"));
                         dialog.alert(
                           "Office connected",
-                          "Your private connection is working.",
+                          "Your office connection is working.",
                         );
                       })
                     }
                   />
+                  {newOfficeAddress === null ? (
+                    <Button
+                      title="Change office address"
+                      secondary
+                      disabled={busy}
+                      onPress={() => setNewOfficeAddress(session.url)}
+                    />
+                  ) : (
+                    <>
+                      <Text style={styles.muted}>
+                        Enter the address provided by your office. The app will
+                        use your current sign-in to check it.
+                      </Text>
+                      <TextInput
+                        accessibilityLabel="New office HTTPS address"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        keyboardType="url"
+                        editable={!busy}
+                        style={styles.input}
+                        value={newOfficeAddress}
+                        onChangeText={setNewOfficeAddress}
+                      />
+                      <Button
+                        title="Check and save address"
+                        disabled={busy}
+                        onPress={() => void changeOfficeAddress()}
+                      />
+                      <Button
+                        title="Cancel"
+                        secondary
+                        disabled={busy}
+                        onPress={() => setNewOfficeAddress(null)}
+                      />
+                    </>
+                  )}
                 </View>
                 {person?.can_invite_users && <InviteManager api={api} />}
                 <WidgetSettingsCard />
                 <Note>
-                  Keep Tailscale connected on your phone. You can use the app
-                  from anywhere with internet access.
+                  The app works over Wi-Fi or mobile data. If the office
+                  restarts its Quick Tunnel, ask for the new address.
                 </Note>
                 <Note details>
                   The office PC must be powered on, online and unlocked, with
@@ -1376,7 +1557,7 @@ function OfficeApp() {
                   onPress={() =>
                     dialog.alert(
                       "Disconnect this phone?",
-                      "You will need a new invite to connect again.",
+                      "Sign in again to reconnect.",
                       [
                         { text: "Cancel", style: "cancel" },
                         {
@@ -1391,10 +1572,11 @@ function OfficeApp() {
                                 await stopTaskReminders().catch(() => {});
                                 await SecureStore.deleteItemAsync(SESSION_KEY);
                                 setSession(null);
+                                setNewOfficeAddress(null);
                                 setPerson(null);
                                 setReport(null);
                                 setHistory([]);
-                                setParties([]);
+                                setPartySearch(null);
                                 setInvoices(null);
                                 setScreen("home");
                               }
@@ -1407,7 +1589,7 @@ function OfficeApp() {
                   <Text style={styles.dangerText}>Disconnect this phone</Text>
                 </Pressable>
                 <Text style={[styles.noteText, { textAlign: "center" }]}>
-                  H.S. Traders Office · Version 1.7.3
+                  H.S. Traders Office · Version 1.8.1
                 </Text>
               </ScrollView>
             )}

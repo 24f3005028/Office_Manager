@@ -84,6 +84,40 @@ function Start-LocalService {
     throw "$Name did not become healthy within 90 seconds. See $stderr. Started services remain available; retry after resolving the error."
 }
 
+function Start-NamedMobileTunnel {
+    $directory = Join-Path $repo 'data/cloudflare'
+    $config = Join-Path $directory 'named-tunnel.yml'
+    if (!(Test-Path -LiteralPath $config)) { return }
+
+    $health = Get-ServiceResponse 'http://127.0.0.1:8002/health'
+    if (!$health.cloudflare_ready) { throw 'Restart the mobile gateway before starting the named tunnel.' }
+    $cloudflared = Join-Path $directory 'cloudflared.exe'
+    if (!(Test-Path -LiteralPath $cloudflared)) { throw "Cloudflare client missing at $cloudflared" }
+    $existing = Get-CimInstance Win32_Process -Filter "Name = 'cloudflared.exe'" |
+        Where-Object { $_.ExecutablePath -eq $cloudflared -and $_.CommandLine -like "*$config*" } |
+        Select-Object -First 1
+    if ($existing) { Write-Host 'Named Cloudflare connector is already running.'; return }
+
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
+    $stdout = Join-Path $logs "named-tunnel-$stamp.out.log"
+    $stderr = Join-Path $logs "named-tunnel-$stamp.err.log"
+    $connector = Start-Process -FilePath $cloudflared `
+        -ArgumentList @('tunnel', '--config', ('"' + $config + '"'), '--no-autoupdate', 'run') `
+        -WorkingDirectory $directory -WindowStyle Hidden -RedirectStandardOutput $stdout `
+        -RedirectStandardError $stderr -PassThru
+    $deadline = (Get-Date).AddSeconds(10)
+    do {
+        $connector.Refresh()
+        if ($connector.HasExited) { throw "Cloudflare connector exited. See $stderr" }
+        if (Select-String -LiteralPath $stderr -SimpleMatch 'Registered tunnel connection' -Quiet) {
+            Write-Host 'Named Cloudflare tunnel connected.'
+            return
+        }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+    Write-Host "Cloudflare connector is still connecting. See $stderr"
+}
+
 try {
     try { $ownsMutex = $mutex.WaitOne(0) }
     catch [System.Threading.AbandonedMutexException] { $ownsMutex = $true }
@@ -145,7 +179,7 @@ try {
         -Arguments @('"' + $bridgeMarker + '"') -Directory $bridge -Url "$bridgeUrl/status" -Headers $headers `
         -Validate { param($r) $null -ne $r.generation -and $null -ne $r.status }
     Start-LocalService -Name 'backend' -Port 8000 -Executable $python `
-        -Arguments @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000') `
+        -Arguments @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000', '--no-access-log') `
         -Directory $backend -Url 'http://127.0.0.1:8000/api/health' `
         -Validate { param($r) $r.database -eq 'ok' -and $r.worker -eq 'running' }
     Start-LocalService -Name 'frontend' -Port 3000 -Executable $node `
@@ -153,10 +187,11 @@ try {
         -Directory $frontend -Url 'http://127.0.0.1:3000/whatsapp-bill-sender' `
         -Validate { param($r) [string]$r -match 'Office document dashboard' }
     Start-LocalService -Name 'mobile' -Port 8002 -Executable $python `
-        -Arguments @('-m', 'uvicorn', 'app.mobile_main:app', '--host', '127.0.0.1', '--port', '8002') `
+        -Arguments @('-m', 'uvicorn', 'app.mobile_main:app', '--host', '127.0.0.1', '--port', '8002', '--no-proxy-headers', '--no-access-log') `
         -Directory $backend -Url 'http://127.0.0.1:8002/health' `
         -Validate { param($r) $r.service -eq 'office-mobile' -and $r.manual_only -eq $true }
     Write-Host 'Office Dashboard is running. WhatsApp restores its saved session in the background.'
+    try { Start-NamedMobileTunnel } catch { Write-Warning $_.Exception.Message }
     Write-Host "Logs: $logs"
     if (!$NoBrowser) { Start-Process 'http://127.0.0.1:3000/whatsapp-bill-sender' }
 } catch {

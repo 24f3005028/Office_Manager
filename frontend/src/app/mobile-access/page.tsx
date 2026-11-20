@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
-import { API_BASE_URL } from "@/lib/api/client";
+import { request } from "@/lib/api/client";
+import { GoogleAccess } from "@/components/layout/google-access";
+import { useGoogleSession } from "@/components/layout/google-gate";
 
 interface User {
   id: string;
@@ -16,7 +18,7 @@ interface Status {
   party_count: number;
 }
 async function call<T>(path: string, body?: unknown): Promise<T> {
-  const response = await fetch(API_BASE_URL + "/api/mobile-admin" + path, {
+  return request<T>("/api/mobile-admin" + path, {
     method: body === undefined ? "GET" : "POST",
     headers:
       body instanceof FormData ? {} : { "Content-Type": "application/json" },
@@ -24,14 +26,9 @@ async function call<T>(path: string, body?: unknown): Promise<T> {
       ? {}
       : { body: body instanceof FormData ? body : JSON.stringify(body) }),
   });
-  const data = await response.json();
-  if (!response.ok)
-    throw new Error(
-      typeof data.detail === "string" ? data.detail : "Request failed.",
-    );
-  return data as T;
 }
 export default function MobileAccess() {
+  const google = useGoogleSession();
   const [status, setStatus] = useState<Status | null>(null),
     [name, setName] = useState(""),
     [phone, setPhone] = useState(""),
@@ -46,8 +43,9 @@ export default function MobileAccess() {
     [message, setMessage] = useState("");
   const refresh = async () => setStatus(await call<Status>("/status"));
   useEffect(() => {
+    if (google.required) return;
     void refresh().catch((reason) => setError(String(reason)));
-  }, []);
+  }, [google.required]);
   async function action(fn: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -61,6 +59,7 @@ export default function MobileAccess() {
       setBusy(false);
     }
   }
+  if (google.required) return <AppShell><GoogleAccess owner={google.owner} /></AppShell>;
   return (
     <AppShell>
       <div className="setup-header">
@@ -260,9 +259,9 @@ export default function MobileAccess() {
               locally on port 8002.
             </p>
             <p>
-              For access away from the office, use the private HTTPS Tailscale
-              address prepared by the owner. Never expose ports 8000, 3000 or
-              3001.
+              For remote access, start the Cloudflare Quick Tunnel on this PC
+              and share its current HTTPS address with approved mobile users.
+              Restarting the tunnel changes the address.
             </p>
             <p>
               Fresh reports show a five-second warning on this computer. Anyone

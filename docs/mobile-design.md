@@ -5,8 +5,9 @@ statements, bill lookup and two compact office shortcuts. The hamburger drawer
 groups Reports, Team & office and Settings. Existing task forms and office requests
 remain mounted so changing sections does not discard a draft or restart a request.
 
-The visual system uses a consistent navy and blue palette, circular icon surfaces,
-rounded cards, readable text and 48 dp or larger action targets. Optional explanations
+The visual system uses white surfaces, neutral greys, black text and clear blue
+actions inspired by iOS. Rounded cards, fine separators, larger headings and
+48 dp or larger action targets keep screens readable. Optional explanations
 use disclosures; errors, task results and confirmations stay visible. Task cards show
 the title, deadline and completion control first, with details and management actions
 below. Home supports pull-to-refresh and reports connection failures without inventing
@@ -87,19 +88,19 @@ PDF actions are Open, Download and Share. Sharing opens the phone's share sheet,
 where WhatsApp and other apps are available. The separate Send to my WhatsApp
 button has been removed; the office bill-sending tool remains available.
 
-## Confirmation sheets
+## Confirmation dialogs
 
-In-app confirmations and acknowledgements use a shared white bottom sheet with
-rounded upper corners, navy action buttons, comfortable spacing and a dimmed
-backdrop. Destructive actions use red. The main action comes first visually and
-in accessibility order, followed by the safe cancellation option. Long messages
-scroll and the sheet leaves room for the phone's navigation area. Reduced-motion
-settings disable its slide animation.
+In-app confirmations and acknowledgements use a simple centered white dialog,
+rounded corners, black headings, grey body text and blue text buttons separated
+by fine grey rules. There is no tinted backdrop, decorative icon, handle or filled
+button. Destructive actions use red text. Cancel comes first, with the confirmation
+on the right. Long messages scroll; larger action sets stack vertically.
+Reduced-motion settings disable the fade animation.
 
 Back and backdrop dismissal only cancel; they never approve task completion,
 discarding edits, sending documents or disconnecting the phone. Repeated taps
 cannot invoke an action twice. Multiple incoming messages are queued. Task
-completion from the home-screen widget uses the same light rounded-sheet design
+completion from the home-screen widget uses the same centered white dialog design
 and retains the selected task version and repeat explanation.
 
 ## Design references

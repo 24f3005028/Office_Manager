@@ -15,47 +15,54 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 
-/** Widget confirmations use the same light, rounded sheet as the main app. */
+/** Widget confirmations use the same simple centered dialog as the main app. */
 internal object TaskConfirmation {
   fun show(activity: Activity, title: String, repeat: String, confirm: () -> Unit): Dialog {
     fun dp(value: Int) = (value * activity.resources.displayMetrics.density).toInt()
-    val navy = Color.rgb(23, 59, 96)
+    val blue = Color.rgb(0, 102, 204)
     val dialog = Dialog(activity)
     dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
     var handled = false
     val content = LinearLayout(activity).apply {
       orientation = LinearLayout.VERTICAL
-      setPadding(dp(24), dp(12), dp(24), dp(24))
+      setPadding(0, 0, 0, 0)
+      clipToOutline = true
       background = GradientDrawable().apply {
         setColor(Color.WHITE)
-        cornerRadii = floatArrayOf(dp(28).toFloat(), dp(28).toFloat(), dp(28).toFloat(), dp(28).toFloat(), 0f, 0f, 0f, 0f)
+        cornerRadius = dp(14).toFloat()
       }
     }
     fun text(value: String, size: Float, color: Int, bold: Boolean = false) = TextView(activity).apply {
       text = value; textSize = size; setTextColor(color)
       if (bold) setTypeface(typeface, Typeface.BOLD)
-      setPadding(0, dp(8), 0, dp(8))
+      gravity = Gravity.CENTER
+      setPadding(dp(20), dp(6), dp(20), dp(6))
     }
-    content.addView(View(activity).apply {
-      background = GradientDrawable().apply { setColor(Color.rgb(216, 225, 232)); cornerRadius = dp(2).toFloat() }
-    }, LinearLayout.LayoutParams(dp(40), dp(4)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(20) })
-    content.addView(text("Mark task done?", 25f, navy, true))
-    content.addView(text(title, 17f, Color.rgb(23, 47, 69), true))
-    if (repeat != "none") content.addView(text("The next $repeat occurrence will stay open.", 16f, Color.rgb(88, 107, 127)))
+    content.addView(text("Mark task done?", 18f, Color.rgb(28, 28, 30), true),
+      LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
+    content.addView(text(title, 14f, Color.rgb(58, 58, 60)))
+    if (repeat != "none") content.addView(text("The next $repeat occurrence will stay open.", 14f, Color.rgb(58, 58, 60)))
+    content.addView(View(activity).apply { setBackgroundColor(Color.rgb(199, 199, 204)) },
+      LinearLayout.LayoutParams(-1, dp(1)).apply { topMargin = dp(16) })
     fun button(label: String, primary: Boolean, action: () -> Unit): Button = Button(activity).apply {
       text = label; textSize = 16f; isAllCaps = false
-      setTypeface(typeface, Typeface.BOLD)
-      setTextColor(if (primary) Color.WHITE else navy)
+      setTypeface(typeface, if (primary) Typeface.BOLD else Typeface.NORMAL)
+      setTextColor(blue)
+      stateListAnimator = null
+      elevation = 0f
       background = GradientDrawable().apply {
-        setColor(if (primary) navy else Color.rgb(240, 244, 247)); cornerRadius = dp(18).toFloat()
+        setColor(Color.WHITE)
       }
-      minHeight = dp(54)
+      minHeight = dp(50)
       setOnClickListener {
         if (!handled) { handled = true; dialog.dismiss(); action() }
       }
     }
-    content.addView(button("Mark done", true, confirm), LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(20) })
-    content.addView(button("Cancel", false) {}, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+    val actions = LinearLayout(activity).apply { orientation = LinearLayout.HORIZONTAL }
+    actions.addView(button("Cancel", false) {}, LinearLayout.LayoutParams(0, -2, 1f))
+    actions.addView(View(activity).apply { setBackgroundColor(Color.rgb(199, 199, 204)) }, LinearLayout.LayoutParams(dp(1), -1))
+    actions.addView(button("Mark done", true, confirm), LinearLayout.LayoutParams(0, -2, 1f))
+    content.addView(actions)
     val scroll = ScrollView(activity).apply { addView(content) }
     dialog.setContentView(scroll)
     dialog.setCanceledOnTouchOutside(true)
@@ -63,11 +70,11 @@ internal object TaskConfirmation {
     dialog.window?.apply {
       setBackgroundDrawableResource(android.R.color.transparent)
       addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-      setDimAmount(0.4f)
-      setGravity(Gravity.BOTTOM)
+      setDimAmount(0.32f)
+      setGravity(Gravity.CENTER)
     }
     dialog.show()
-    dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+    dialog.window?.setLayout(minOf(dp(320), (activity.resources.displayMetrics.widthPixels * 0.86f).toInt()), ViewGroup.LayoutParams.WRAP_CONTENT)
     return dialog
   }
 }

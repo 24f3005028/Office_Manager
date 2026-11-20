@@ -5,8 +5,9 @@ from __future__ import annotations
 import inspect
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -30,6 +31,7 @@ from app.domains.send_jobs.service import SendJobService, SendJobWorker
 from app.domains.settings.service import WorkspaceSettingsService
 from app.integrations.whatsapp.client import HttpWhatsAppBridge, WhatsAppBridge
 from app.integrations.whatsapp.readiness import BridgeReadiness
+from app.office_google import OfficeGoogle, dashboard_access, google_router
 
 
 class RuntimeCORSMiddleware:
@@ -112,6 +114,7 @@ def create_app(
         application.state.settings = runtime_settings
         application.state.database = database
         application.state.mobile_store = MobileStore(database)
+        application.state.office_google = OfficeGoogle(runtime_settings, database)
         application.state.workspace_settings = workspace_settings
         application.state.document_service = document_service
         application.state.pdf_date_resolver = document_service.pdf_dates
@@ -144,16 +147,23 @@ def create_app(
                     if inspect.isawaitable(result):
                         await result
 
-    application = FastAPI(title="Office Document Dashboard API", lifespan=lifespan)
+    application = FastAPI(
+        title="Office Document Dashboard API", lifespan=lifespan,
+        docs_url=None, redoc_url=None, openapi_url=None,
+    )
+
+    @application.get("/openapi.json", include_in_schema=False)
+    def openapi_schema(_: str | None = Depends(dashboard_access)) -> dict[str, Any]:
+        return application.openapi()
+
     application.add_middleware(RuntimeCORSMiddleware, application=application)
     application.include_router(health.router, prefix="/api")
-    application.include_router(documents.router, prefix="/api")
-    application.include_router(busy_ledger_routes.router, prefix="/api")
-    application.include_router(send_jobs.router, prefix="/api")
-    application.include_router(settings_routes.router, prefix="/api")
-    application.include_router(whatsapp.router, prefix="/api")
-    application.include_router(pouncha_routes.router, prefix="/api")
-    application.include_router(mobile_admin.router, prefix="/api")
+    application.include_router(google_router("dashboard"), prefix="/api/auth")
+    for router in (
+        documents.router, busy_ledger_routes.router, send_jobs.router, settings_routes.router,
+        whatsapp.router, pouncha_routes.router, mobile_admin.router,
+    ):
+        application.include_router(router, prefix="/api", dependencies=[Depends(dashboard_access)])
     return application
 
 

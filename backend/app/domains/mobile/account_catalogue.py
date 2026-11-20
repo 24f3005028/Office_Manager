@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import closing
 from typing import Any
 
+from app.domains.mobile.party_search import rank_names
 from app.domains.mobile.store import MobileStore, digest
 
 # BUSY's Name column supplied by the owner. Under Group is not a search category.
@@ -99,17 +100,18 @@ class AccountCatalogue:
             ]
 
     def accounts(self, query: str = "", group_id: str | None = None) -> list[dict[str, Any]]:
+        query = query.strip()
+        sql = (
+            "SELECT a.id,a.name,a.group_id,g.name AS group_name FROM mobile_accounts a "
+            "LEFT JOIN mobile_account_groups g ON g.id=a.group_id "
+            "WHERE (? IS NULL OR a.group_id=?) ORDER BY a.name COLLATE NOCASE"
+        )
         with closing(self.database.connect()) as db:
-            return [
-                dict(row)
-                for row in db.execute(
-                    "SELECT a.id,a.name,a.group_id,g.name AS group_name FROM mobile_accounts a "
-                    "LEFT JOIN mobile_account_groups g ON g.id=a.group_id "
-                    "WHERE instr(lower(a.name),lower(?))>0 AND (? IS NULL OR a.group_id=?) "
-                    "ORDER BY a.name COLLATE NOCASE LIMIT 100",
-                    (query, group_id, group_id),
-                )
-            ]
+            if not query:
+                return [dict(row) for row in db.execute(sql + " LIMIT 100", (group_id, group_id))]
+            rows = db.execute(sql, (group_id, group_id))
+            matches, _ = rank_names((dict(row) for row in rows), query)
+            return matches
 
     def account(self, account_id: str) -> dict[str, str] | None:
         with closing(self.database.connect()) as db:

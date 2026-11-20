@@ -20,6 +20,7 @@ def isolated_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     for name in tuple(os.environ):
         if name.casefold() in names:
             monkeypatch.delenv(name)
+    monkeypatch.setenv("GOOGLE_OAUTH_REQUIRED", "false")
 
     connect = sqlite3.connect
 

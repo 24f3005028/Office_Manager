@@ -4,6 +4,6 @@
   <TextView android:id="@+id/widget_search_bar" android:layout_width="match_parent" android:layout_height="56dp"
     android:background="@drawable/office_widget_background" android:gravity="center_vertical"
     android:paddingStart="18dp" android:paddingEnd="12dp" android:text="@string/office_widget_search_party"
-    android:textColor="#19314B" android:textSize="16sp" android:maxLines="1" android:ellipsize="end"
+    android:textColor="#1c1c1e" android:textSize="16sp" android:maxLines="1" android:ellipsize="end"
     android:drawableStart="@drawable/office_widget_search_icon" android:drawablePadding="12dp" />
 </LinearLayout>

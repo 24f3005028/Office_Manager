@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.domains.mobile.account_catalogue import AccountCatalogue
 from app.domains.mobile.accounts import account_rows
 from app.domains.mobile.store import MobileStore
+from app.office_google import dashboard_owner, office_google
 
 
 def local_only(request: Request) -> None:
@@ -23,7 +24,9 @@ def local_only(request: Request) -> None:
         raise HTTPException(403, "Browser origin is not allowed.")
 
 
-router = APIRouter(prefix="/mobile-admin", dependencies=[Depends(local_only)])
+router = APIRouter(
+    prefix="/mobile-admin", dependencies=[Depends(local_only), Depends(dashboard_owner)]
+)
 
 
 class InviteRequest(BaseModel):
@@ -51,7 +54,16 @@ def status(request: Request) -> dict[str, Any]:
 
 @router.post("/invites", status_code=201)
 def invite(payload: InviteRequest, request: Request) -> dict[str, Any]:
+    if office_google(request).settings.google_oauth_required:
+        raise HTTPException(403, "Add the person under Google access.")
     return store(request).invite(payload.name.strip(), payload.phone)
+
+
+@router.post("/users", status_code=201)
+def add_user(payload: InviteRequest, request: Request) -> dict[str, str]:
+    if not payload.name.strip():
+        raise HTTPException(400, "Enter the new user's name.")
+    return {"id": store(request).add_user(payload.name.strip(), payload.phone)}
 
 
 @router.post("/users/{user_id}/revoke")

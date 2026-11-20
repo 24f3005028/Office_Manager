@@ -34,6 +34,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Install-DesktopShort
 
 ## First-time installation
 
+### Google sign-in
+
+Create a **Web application** OAuth client in Google Cloud Console. Add these exact authorized redirect URIs:
+
+- `http://127.0.0.1:8000/api/auth/google/callback`
+- `https://hst-tunnel.brewwithcrew.com/mobile/v1/auth/google/callback`
+
+Save the downloaded client JSON as `backend/config/google_oauth_client.json` or set
+`GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` in `backend/.env`. Set
+`GOOGLE_OAUTH_OWNER_EMAIL` to the exact office Google email. If the Google consent
+screen is in Testing, add the owner and each authorized Google email as test users.
+Use Gmail or Google Workspace addresses for sign-in.
+The app requests only Google identity and email. Both services require Google by default
+and deny office access while credentials are missing.
+
+Restart the dashboard backend and mobile gateway after configuration, then open the
+desktop shortcut and sign in as the owner. In **Settings → Manage mobile access**,
+grant dashboard access and optionally link an existing mobile account to each approved
+Google email. Create a mobile account there for a new user. Removing a grant disables
+its sessions. Existing invite-only Android sessions must sign in again using the
+updated APK. Linking the existing mobile account preserves its task and report history.
+
 Requires Python 3.13+, Node.js 20.19+ and Bun for dependency installation, plus installed
 Google Chrome (or WHATSAPP_EXECUTABLE_PATH pointing to another compatible Chrome).
 The launcher uses backend/.venv/Scripts/python.exe and Node directly after installation.
@@ -134,7 +156,7 @@ The private mobile app includes party statements, saved bill PDFs, office tools 
 shared tasks. Its home-screen task widget supports completion, adding a task and
 manual refresh; the party widget opens search directly. See
 [mobile design and widget behaviour](docs/mobile-design.md) and
-[Android release 1.7.2](docs/android-release-1.7.2.md). Copy account supports custom
+[Android release 1.7.3](docs/android-release-1.7.3.md). Copy account supports custom
 ledger dates and account-group filters. Group closing balances show each account
 and debit/credit totals, with PDF sharing. Open PDF uses a PDF viewer,
 preferring Google Drive on Android, instead of print preview.

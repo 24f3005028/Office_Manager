@@ -19,6 +19,7 @@ backend/.env
 backend/data/
 backend/pending bill.xlsx
 backend/config/google_service_account.json
+backend/config/google_oauth_client.json
 backend/env/
 backend/.pytest_cache/
 backend/.mypy_cache/

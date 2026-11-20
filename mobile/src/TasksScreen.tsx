@@ -603,8 +603,8 @@ export default forwardRef<
                 />
               )}
               <Note details icon="info">
-                Background refresh takes 15 minutes or longer. Keep Tailscale
-                connected. Android battery restrictions or force-stopping the
+                Background refresh takes 15 minutes or longer. Android battery
+                restrictions or force-stopping the
                 app can delay reminders; open the app to refresh. Repeats move
                 to the next due date when marked done.
               </Note>

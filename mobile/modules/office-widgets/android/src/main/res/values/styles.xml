@@ -3,6 +3,6 @@
     <item name="android:windowIsTranslucent">true</item>
     <item name="android:windowBackground">@android:color/transparent</item>
     <item name="android:windowDisablePreview">true</item>
-    <item name="android:colorAccent">#315f94</item>
+    <item name="android:colorAccent">#0066cc</item>
   </style>
 </resources>

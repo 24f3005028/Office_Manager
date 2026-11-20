@@ -162,6 +162,50 @@ def test_gateway_has_no_office_routes_and_reads_never_start_busy(runtime: Any) -
         )
 
 
+def test_party_search_ranks_spacing_matches_and_offers_close_spellings(runtime: Any) -> None:
+    service, calls = runtime
+    service.store.add_parties(["A SMS TEXTILES", "S M S Enterprises", "S.M.S."])
+    with TestClient(create_mobile_app(service=service)) as client:
+        url = "/mobile/v1/parties"
+        assert client.get(url, params={"q": "enterprses", "suggest": True}).status_code == 401
+        headers = login(client, service)
+        direct = client.get(url, params={"q": "sms"}, headers=headers).json()
+        assert [row["name"] for row in direct] == [
+            "S.M.S.",
+            "S M S Enterprises",
+            "A SMS TEXTILES",
+        ]
+        assert client.get(url, params={"q": "sms", "suggest": True}, headers=headers).json() == {
+            "matches": direct,
+            "suggestions": [],
+        }
+        for query in ("enterprses", "enterprizes", "enterprisses", "sms enterpriess"):
+            response = client.get(url, params={"q": query, "suggest": True}, headers=headers)
+            assert response.json() == {"matches": [], "suggestions": [direct[1]]}
+        for query in ("zzz", "unrelated"):
+            response = client.get(url, params={"q": query, "suggest": True}, headers=headers)
+            assert response.json() == {"matches": [], "suggestions": []}
+        assert calls == []
+
+
+def test_party_search_matches_dotted_names_with_undotted_initials(runtime: Any) -> None:
+    service, _ = runtime
+    service.store.add_parties(["MAVEN TRADERS", "A.V. Textiles", "A.V."])
+    with TestClient(create_mobile_app(service=service)) as client:
+        headers = login(client, service)
+        response = client.get(
+            "/mobile/v1/parties", params={"q": "av", "suggest": True}, headers=headers
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert [row["name"] for row in result["matches"]] == [
+            "A.V.",
+            "A.V. Textiles",
+            "MAVEN TRADERS",
+        ]
+        assert result["suggestions"] == []
+
+
 def test_private_installer_does_not_need_a_session_before_pairing(
     runtime: Any, tmp_path: Path
 ) -> None:
@@ -174,6 +218,28 @@ def test_private_installer_does_not_need_a_session_before_pairing(
         assert response.content == b"PK-test-apk"
         assert "HS-Traders-Office.apk" in response.headers["content-disposition"]
         assert client.get("/mobile/v1/parties").status_code == 401
+        assert calls == []
+
+
+def test_cloudflare_exposes_only_mobile_routes_and_limits_each_visitor(runtime: Any) -> None:
+    service, calls = runtime
+    visitor = {"Host": "office-mobile-tunnel", "CF-Connecting-IP": "192.0.2.1"}
+    with TestClient(
+        create_mobile_app(service=service), client=("127.0.0.1", 12345)
+    ) as client:
+        assert client.get("/health").json()["cloudflare_ready"]
+        assert client.get("/health", headers=visitor).status_code == 404
+        assert client.get("/install/android.apk", headers=visitor).status_code == 404
+        assert client.get("/api/settings", headers=visitor).status_code == 404
+        response = client.get("/mobile/v1/parties", headers=visitor)
+        assert response.status_code == 401
+        assert response.headers["Cache-Control"] == "no-store"
+
+        for _ in range(10):
+            assert client.post("/mobile/v1/pair", json={}, headers=visitor).status_code == 422
+        assert client.post("/mobile/v1/pair", json={}, headers=visitor).status_code == 429
+        other = visitor | {"CF-Connecting-IP": "192.0.2.2"}
+        assert client.post("/mobile/v1/pair", json={}, headers=other).status_code == 422
         assert calls == []
 
 

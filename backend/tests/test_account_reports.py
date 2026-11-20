@@ -167,6 +167,25 @@ def test_group_filter_uses_name_not_parent_categories_and_reads_never_export(run
         assert calls == []
 
 
+def test_ledger_search_matches_dotted_names_within_the_selected_group(runtime: Any) -> None:
+    service, _ = runtime
+    service.accounts.import_rows(
+        [
+            {"name": "A.V. Textiles", "group": "Sale"},
+            {"name": "A.V. Traders", "group": "Purchase"},
+        ]
+    )
+    with TestClient(create_mobile_app(service=service)) as client:
+        headers = login(client, service)
+        response = client.get(
+            "/mobile/v1/accounts",
+            headers=headers,
+            params={"q": "av", "group_id": service.accounts.group_id("Sale")},
+        )
+        assert response.status_code == 200
+        assert [row["name"] for row in response.json()] == ["A.V. Textiles"]
+
+
 def test_copy_account_custom_dates_idempotency_ownership_and_pdf_filename(runtime: Any) -> None:
     service, calls = runtime
     with TestClient(create_mobile_app(service=service)) as client:

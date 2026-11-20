@@ -166,8 +166,7 @@ export default function InviteManager({ api }: { api: Api }) {
         </View>
       )}
       <Note>
-        The new phone also needs Tailscale access and your office HTTPS address.
-        This invite grants app access; it does not add a phone to Tailscale.
+        Share the current office HTTPS address with the new user along with their invite.
       </Note>
     </View>
   );

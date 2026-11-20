@@ -1,4 +1,18 @@
 export type AccountMode = "ledger" | "group_balances";
+
+export function partyNameFilter(query: string) {
+  const literal = query.trim().normalize("NFKC").toLowerCase();
+  const separators = /[^\p{L}\p{N}]+/gu;
+  const compact = literal.replace(separators, "");
+  return (name: string) => {
+    const normalized = name.normalize("NFKC").toLowerCase();
+    return (
+      normalized.includes(literal) ||
+      (compact !== "" && normalized.replace(separators, "").includes(compact))
+    );
+  };
+}
+
 export function formatAccountMoney(value: string): string {
   if (!/^\d+(?:\.\d{1,2})?$/.test(value)) return "Unavailable";
   const [whole, fraction = ""] = value.split(".");

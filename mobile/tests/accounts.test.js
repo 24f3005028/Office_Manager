@@ -4,7 +4,16 @@ import {
   accountReportLabel,
   currentAccountYear,
   formatAccountMoney,
+  partyNameFilter,
 } from "../src/accountModel";
+
+test("report filters find dotted and spaced party names from initials", () => {
+  const names = ["A.V. Textiles", "A.V.", "A V Traders", "Example Party"];
+  expect(names.filter(partyNameFilter("av"))).toEqual(names.slice(0, 3));
+  expect(names.filter(partyNameFilter(" A.V. "))).toEqual(names.slice(0, 3));
+  expect(names.filter(partyNameFilter("."))).toEqual(names.slice(0, 2));
+  expect(names.filter(partyNameFilter(" "))).toEqual(names);
+});
 
 test("large balances retain their exact digits in Indian notation", () => {
   expect(formatAccountMoney("123456789012345678.90")).toBe(
