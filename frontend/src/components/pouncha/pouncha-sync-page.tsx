@@ -108,11 +108,11 @@ export function PounchaSyncPage() {
     : run.status === "success" ? (run.preview_only ? "Preview is ready" : run.appended_count ? "Pouncha sheet updated" : "Your sheet is up to date")
     : run.status === "needs_review" ? "Check the sheet before trying again" : run.status === "reviewed" ? "Review completed" : "The update could not finish";
   return <AppShell>
-    <div className="dashboard-intro"><div><p className="eyebrow">Google Sheets</p><h2>Update Pouncha sheet</h2><p className="intro-copy">Choose the dates. We will add the missing sales bills from BUSY.</p></div><span className="status-pill neutral">Only runs when you click</span></div>
+    <header className="dashboard-intro"><div><h1>Update Pouncha sheet</h1><p className="intro-copy">Select a date range to find missing BUSY sales bills and add them to Google Sheets.</p></div></header>
     {error && <div className="notice notice-error" role="alert">{error}</div>}
     <div className="pouncha-layout">
       <section className="panel pouncha-card" aria-labelledby="sync-options">
-        <div className="section-heading"><div><p className="eyebrow">Step 1</p><h2 id="sync-options">Which bills should we check?</h2></div><span className="step-number">1</span></div>
+        <div className="section-heading"><h2 id="sync-options">Bills to check</h2></div>
         <fieldset className="choice-group"><legend>Choose a date range</legend>
           <label className="choice-card"><input type="radio" name="sync-range" checked={mode === "continue"} disabled={blocked} onChange={() => setMode("continue")} /><span><strong>Continue from the last update</strong><small>Recommended. Bills already in the sheet will be skipped.</small></span></label>
           <label className="choice-card"><input type="radio" name="sync-range" checked={mode === "custom"} disabled={blocked} onChange={() => setMode("custom")} /><span><strong>Choose different dates</strong><small>Use this to check older bills or a specific period.</small></span></label>
@@ -130,7 +130,7 @@ export function PounchaSyncPage() {
         <div className="pouncha-row"><h3>Already in your sheet</h3><span className={`status-pill ${status?.sheet_error ? "warning" : status ? "success" : "neutral"}`}>{loading ? "Checking…" : status?.sheet_error ? "Check connection" : status ? "Connected" : "Not connected"}</span></div>
         {status?.sheet_error ? <p className="inline-error">{status.sheet_error}</p> : <dl className="sheet-summary"><div><dt>Last bill number</dt><dd>{status?.last_bill ?? "—"}</dd></div><div><dt>Latest bill date</dt><dd>{status?.last_date ? displayDate(status.last_date) : "—"}</dd></div><div><dt>Total bills saved</dt><dd>{status?.bill_count?.toLocaleString("en-IN") ?? "—"}</dd></div></dl>}
         <p className="sheet-note">Existing bills and your remarks stay in place. We only add missing bills.</p>
-        {status && <a href={status.sheet_url} target="_blank" rel="noreferrer">Open POUNCHA 26-27 <Icon name="arrow" width="17" height="17" /></a>}
+        {status && <a href={status.sheet_url} target="_blank" rel="noreferrer">Open POUNCHA 26-27</a>}
         <div><button className="button button-quiet" disabled={loading || busy} onClick={() => void refresh()}>{loading ? "Checking sheet…" : "Check sheet again"}</button></div>
       </aside>
     </div>

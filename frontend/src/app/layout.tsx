@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { GoogleGate } from "@/components/layout/google-gate";
 import "./globals.css";
+import "./workspace.css";
 
 export const metadata: Metadata = {
   title: "Office document dashboard",

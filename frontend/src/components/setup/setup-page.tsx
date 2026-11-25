@@ -96,6 +96,7 @@ export function SetupPage() {
   useEffect(() => {
     if (!qrAvailable && whatsappState !== "qr") {
       setQrUrl(null);
+      setQrLoading(false);
       return;
     }
     let cancelled = false;
@@ -105,7 +106,10 @@ export function SetupPage() {
         if (!cancelled) setQrUrl(url || null);
       })
       .catch((reason) => {
-        if (!cancelled) setError(messageFor(reason, "The WhatsApp QR code is not available yet."));
+        if (!cancelled) {
+          setQrUrl(null);
+          setError(messageFor(reason, "The WhatsApp QR code is not available yet."));
+        }
       })
       .finally(() => {
         if (!cancelled) setQrLoading(false);
@@ -113,7 +117,7 @@ export function SetupPage() {
     return () => {
       cancelled = true;
     };
-  }, [qrAvailable, whatsappState]);
+  }, [qrAvailable, status?.generation, status?.qr_revision, whatsappState]);
 
   useEffect(() => {
     const interval = window.setInterval(() => void refreshStatus(), 2000);
@@ -179,7 +183,7 @@ export function SetupPage() {
       <div className="setup-header">
         <div>
           <p className="eyebrow">Workspace setup</p>
-          <h2>Make sending effortless.</h2>
+          <h1>Set up bill sending</h1>
           <p className="intro-copy">Link WhatsApp once, import the contacts you already use, and point the dashboard at your document folders.</p>
         </div>
         <Link className="button button-secondary" href="/">Back home</Link>

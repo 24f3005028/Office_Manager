@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/layout/app-shell";
+import { Icon } from "@/components/layout/icons";
 import { FolderSettingsForm } from "@/components/settings/folder-settings-form";
 import { api, ApiError } from "@/lib/api/client";
 import type { WhatsappStatus, WorkspaceSettings } from "@/lib/api/types";
@@ -31,24 +32,26 @@ export default function SettingsRoute() {
 
   return (
     <AppShell>
-      <div className="setup-header">
+      <header className="setup-header">
         <div>
-          <p className="eyebrow">Settings</p>
-          <h2>Settings</h2>
+          <h1>Settings</h1>
           <p className="intro-copy">Connect WhatsApp and choose where your bill files are saved.</p>
         </div>
-        <Link className="button button-secondary" href="/">Back home</Link>
-      </div>
+      </header>
       {error && <div className="notice notice-error">{error}</div>}
-      <div className="notice" style={{marginBottom:24}}><strong>Android app</strong><p>Manage approved people, connect phones and update the party list.</p><Link href="/mobile-access" className="button button-secondary">Manage mobile access</Link></div>
+      <section className="panel settings-access-card">
+        <span className="status-icon"><Icon name="phone" width="20" height="20" /></span>
+        <div><h2>Android app</h2><p className="muted-text">Manage approved people, connect phones and update the party list.</p></div>
+        <Link href="/mobile-access" className="button button-secondary">Manage mobile access</Link>
+      </section>
       <div className="settings-layout">
         <section className="panel settings-connection-card">
           <div className="section-heading compact-heading">
-            <div><p className="eyebrow">WhatsApp connection</p><h2>WhatsApp account</h2></div>
+            <h2>WhatsApp account</h2>
             <span className={`status-pill ${connected ? "success" : "warning"}`}><span className="status-dot" />{connected ? "Connected" : "Setup needed"}</span>
           </div>
           <p className="muted-text">{connected ? "WhatsApp is connected to this computer." : "Link WhatsApp before opening the sender."}</p>
-          <Link className="button button-primary" href="/setup">{connected ? "Review setup" : "Link WhatsApp"} <span aria-hidden="true">↗</span></Link>
+          <Link className="button button-primary" href="/setup">{connected ? "Review setup" : "Link WhatsApp"}</Link>
         </section>
         {settings && <section className="panel settings-folders-card"><FolderSettingsForm settings={settings} onSaved={setSettings} /></section>}
       </div>

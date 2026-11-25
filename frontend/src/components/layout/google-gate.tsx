@@ -3,10 +3,17 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import Image from "next/image";
 import { API_BASE_URL, request } from "@/lib/api/client";
+import { Icon } from "./icons";
 
 type Session = { required: boolean; ready: boolean; email: string | null; owner: boolean };
 const GoogleSession = createContext<Session>({ required: true, ready: false, email: null, owner: false });
 export const useGoogleSession = () => useContext(GoogleSession);
+const signInErrors: Record<string, string> = {
+  denied: "This Google account hasn’t been given office access.",
+  expired: "This sign-in attempt expired. Start again in this browser.",
+  cancelled: "Google sign-in was cancelled.",
+  failed: "Google couldn’t verify this sign-in. Try again with your approved account.",
+};
 
 export function GoogleGate({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -21,8 +28,7 @@ export function GoogleGate({ children }: { children: ReactNode }) {
       return;
     }
     const result = new URLSearchParams(window.location.search).get("google");
-    if (result === "denied") setError("This Google account hasn’t been given office access.");
-    else if (result) setError("Google sign-in did not finish. Please try again.");
+    if (result && Object.hasOwn(signInErrors, result)) setError(signInErrors[result]);
     request<Session>("/api/auth/status").then(setSession).catch(() => {
       setUnavailable(true);
       setError("The office dashboard service could not be reached.");
@@ -37,12 +43,13 @@ export function GoogleGate({ children }: { children: ReactNode }) {
     <main className="office-signin">
       <section className="office-signin-card" aria-labelledby="office-signin-title">
         <div className="office-signin-brand">
-          <Image src="/auth/hs-traders.png" width={52} height={52} alt="" priority />
-          <span>H.S. Traders</span>
+          <div className="signin-lockup"><Image src="/auth/hs-traders.png" width={48} height={48} alt="" priority /><span>H.S. Traders</span></div>
+          <p>Office workspace</p>
+          <span className="signin-art" aria-hidden="true"><Icon name="file" width="72" height="72" /></span>
         </div>
         <div className="office-signin-content">
-          <h1 id="office-signin-title">Sign in to the office dashboard</h1>
-          <p>Use the Google account approved by H.S. Traders.</p>
+          <h1 id="office-signin-title">Sign in to your workspace</h1>
+          <p>Use your approved Google account to continue.</p>
           {error && <p className="notice notice-error" role="alert">{error}</p>}
           <div className="office-signin-action">
             {session?.ready ? (
@@ -57,8 +64,8 @@ export function GoogleGate({ children }: { children: ReactNode }) {
               <p role="status"><span className="spinner dark" aria-hidden="true" /> Checking sign-in…</p>
             )}
           </div>
+          <p className="office-signin-footer">Need access? Contact the office owner.</p>
         </div>
-        <footer className="office-signin-footer">Need access? Contact the office owner.</footer>
       </section>
     </main>
   );

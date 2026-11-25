@@ -17,6 +17,7 @@ export function DateFilter({ preset, range, onPresetChange, onRangeChange }: Dat
             className={preset === value ? "segment active" : "segment"}
             key={value}
             type="button"
+            aria-pressed={preset === value}
             onClick={() => onPresetChange(value)}
           >
             {value === "today" ? "Today" : value === "yesterday" ? "Yesterday" : "Custom"}

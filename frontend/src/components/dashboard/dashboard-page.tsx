@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
+import { Icon } from "@/components/layout/icons";
 import { api, ApiError } from "@/lib/api/client";
 import { dateRangeFor, isValidDateRange, toDateInput, type DatePreset, type DateRange } from "@/lib/date";
 import { countUnverifiedDocuments, groupDocumentsByDate } from "@/lib/documents";
@@ -133,6 +134,7 @@ export function DashboardPage() {
     const shouldLoadQr = Boolean(status?.qr_available || status?.status === "qr");
     if (!shouldLoadQr) {
       setQrUrl(null);
+      setQrLoading(false);
       return;
     }
     let cancelled = false;
@@ -150,7 +152,7 @@ export function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [status?.qr_available, status?.status]);
+  }, [status?.generation, status?.qr_available, status?.qr_revision, status?.status]);
 
   useEffect(() => {
     return () => {
@@ -366,9 +368,8 @@ export function DashboardPage() {
     <AppShell>
       <div className="dashboard-intro">
         <div>
-          <p className="eyebrow">WhatsApp sender</p>
-          <h2>Send bills on WhatsApp</h2>
-          <p className="intro-copy">Choose dates, choose a contact, then check and send your bills.</p>
+          <h1>Send bills on WhatsApp</h1>
+          <p className="intro-copy">Find PDF bills, choose a recipient, and review the files before sending.</p>
         </div>
         <div className="date-stamp">
           <span>Today</span>
@@ -390,10 +391,9 @@ export function DashboardPage() {
           <section className="panel filter-panel" aria-labelledby="filters-heading">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">Step 01</p>
                 <h2 id="filters-heading">Choose bills</h2>
               </div>
-              <span className="step-number">1</span>
+              <span className="step-number" aria-label="Step 1">1</span>
             </div>
             <DateFilter
               preset={datePreset}
@@ -411,7 +411,7 @@ export function DashboardPage() {
               disabled={!validFilters || previewLoading}
               onClick={() => void previewDocuments()}
             >
-              {previewLoading ? <><span className="spinner" /> Scanning…</> : <>Find bills <span aria-hidden="true">↗</span></>}
+              {previewLoading ? <><span className="spinner" /> Scanning…</> : "Find bills"}
             </button>
             {previewError && <p className="inline-error">{previewError}</p>}
           </section>
@@ -419,10 +419,9 @@ export function DashboardPage() {
           <section className="panel contact-panel" aria-labelledby="recipient-heading">
             <div className="section-heading">
               <div>
-                <p className="eyebrow">Step 02</p>
                 <h2 id="recipient-heading">Choose a contact</h2>
               </div>
-              <span className="step-number">2</span>
+              <span className="step-number" aria-label="Step 2">2</span>
             </div>
             <ContactPicker
               contacts={contacts}
@@ -439,11 +438,13 @@ export function DashboardPage() {
         <section className="panel preview-panel" aria-labelledby="preview-heading">
           <div className="section-heading preview-heading">
             <div>
-              <p className="eyebrow">Step 03</p>
               <h2 id="preview-heading">Check and send</h2>
               <p className="muted-text">{previewSummary}</p>
             </div>
-            {hasPreviewed && documents.length > 0 && <span className="count-badge">{documents.length} files</span>}
+            <div className="preview-heading-meta">
+              {hasPreviewed && documents.length > 0 && <span className="count-badge">{documents.length} files</span>}
+              <span className="step-number" aria-label="Step 3">3</span>
+            </div>
           </div>
 
           {hasPreviewed && documents.length > 0 && (
@@ -462,9 +463,7 @@ export function DashboardPage() {
 
           {!hasPreviewed ? (
             <div className="preview-placeholder">
-              <div className="preview-art" aria-hidden="true">
-                <span className="art-back" /><span className="art-front" /><span className="art-line one" /><span className="art-line two" />
-              </div>
+              <span className="preview-art"><Icon name="file" width="25" height="25" /></span>
               <h3>Your bills will appear here</h3>
               <p>Choose dates above and click Find bills.</p>
             </div>

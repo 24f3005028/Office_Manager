@@ -82,33 +82,49 @@ export function HomePage() {
 
   const connected = isConnected(status);
   const initializing = loading || isStarting(status) || (!connected && !requiresSetup(status) && !error);
-  const ready = connected && Boolean(settings?.configured) && status?.roots_synced !== false;
   const senderHref = requiresSetup(status) || (connected && settings?.configured === false)
     ? "/setup?returnTo=%2Fwhatsapp-bill-sender" : "/whatsapp-bill-sender";
+  const whatsappLabel = connected ? "Connected" : initializing ? "Connecting…" : error && !status ? "Unavailable" : "Needs attention";
+  const foldersReady = settings?.configured && status?.roots_synced !== false;
+  const foldersLabel = !settings ? (loading ? "Checking…" : "Unavailable") :
+    foldersReady ? "Ready" : settings.configured ? "Sync pending" : "Setup needed";
+
   return <AppShell>
-    <div className="home-hero">
-      <p className="eyebrow">Daily work</p>
-      <h1>What would you like to do?</h1>
-      <p className="intro-copy">Choose a task below. We will guide you through each step.</p>
-    </div>
-    {error && <div className="notice notice-error" role="alert">{error} You can still open a task and check its connection.</div>}
-    <section className="task-grid" aria-label="Choose a task">
-      <Link className="task-card" href={senderHref}>
-        <div className="task-card-top"><span className="task-icon"><Icon name="send" width="30" height="30" /></span><span className={`status-pill ${ready ? "success" : initializing ? "neutral" : "warning"}`}><span className="status-dot" />{ready ? "WhatsApp ready" : initializing ? "Connecting WhatsApp" : "Check WhatsApp"}</span></div>
-        <h2>Send bills on WhatsApp</h2>
-        <p>Find the bills and send them to one contact.</p>
-        <ol className="task-steps"><li>Choose the dates</li><li>Choose a contact</li><li>Check the bills and send</li></ol>
-        <span className="button button-primary">Open bill sender <Icon name="arrow" /></span>
-      </Link>
-      <Link className="task-card" href="/pouncha-sync">
-        <div className="task-card-top"><span className="task-icon green"><Icon name="sync" width="30" height="30" /></span><span className="status-pill neutral">Runs when you click</span></div>
-        <h2>Update Pouncha sheet</h2>
-        <p>Add new BUSY sales bills to your Google Sheet.</p>
-        <ol className="task-steps"><li>Check the last saved bill</li><li>Choose the dates</li><li>Click Update sheet</li></ol>
-        <span className="button button-primary">Open Pouncha <Icon name="arrow" /></span>
-      </Link>
+    <header className="home-hero">
+      <div className="home-hero-copy">
+        <h1>Office workspace</h1>
+        <p>Send customer bills and keep your Pouncha sheet up to date.</p>
+      </div>
+      <div className="hero-illustration" aria-hidden="true">
+        <span className="hero-document hero-sheet"><Icon name="sheet" width="32" height="32" /></span>
+        <span className="hero-document hero-bill"><Icon name="file" width="43" height="43" /></span>
+        <span className="hero-document hero-send"><Icon name="send" width="21" height="21" /></span>
+      </div>
+    </header>
+    <section className="home-section" aria-labelledby="workflows-heading">
+      <h2 id="workflows-heading">Daily workflows</h2>
+      <div className="task-grid">
+        <article className="task-card">
+          <span className="task-icon"><Icon name="send" width="25" height="25" /></span>
+          <h3>Send bills on WhatsApp</h3>
+          <p>Find PDF bills by date, review the files, and send them to a contact.</p>
+          <Link className="button button-primary" href={senderHref}>Open bill sender</Link>
+        </article>
+        <article className="task-card">
+          <span className="task-icon green"><Icon name="sheet" width="25" height="25" /></span>
+          <h3>Update Pouncha sheet</h3>
+          <p>Find missing sales bills in BUSY and add them to your Google Sheet.</p>
+          <Link className="button button-secondary" href="/pouncha-sync">Open Pouncha</Link>
+        </article>
+      </div>
     </section>
-    <section className="home-help panel"><span className="help-icon"><Icon name="help" /></span><div><h2>Setting up this computer?</h2><p>Connect WhatsApp and choose the folders where your bills are saved.</p></div><Link className="button button-secondary" href="/settings">Open settings <Icon name="arrow" /></Link></section>
-    <div className="home-summary"><span><span className={`summary-dot ${connected ? "on" : "off"}`} />WhatsApp: {connected ? "Connected" : initializing ? "Connecting…" : "Needs attention"}</span><span><Icon name="folder" width="17" height="17" />Bill folders: {settings?.configured ? "Ready" : "Check settings"}</span></div>
+    <section className="home-section" aria-labelledby="readiness-heading">
+      <div className="home-section-heading"><h2 id="readiness-heading">Workspace status</h2><Link href="/settings">Open settings</Link></div>
+      {error && <p className="notice notice-error" role="alert">{error}</p>}
+      <ul className="workspace-status panel" aria-live="polite">
+        <li><span className="status-icon"><Icon name="chat" width="20" height="20" /></span><strong>WhatsApp</strong><span className={`status-pill ${connected ? "success" : initializing ? "neutral" : "warning"}`}><span className="status-dot" />{whatsappLabel}</span></li>
+        <li><span className="status-icon"><Icon name="folder" width="20" height="20" /></span><strong>Bill folders</strong><span className={`status-pill ${foldersReady ? "success" : loading ? "neutral" : "warning"}`}><span className="status-dot" />{foldersLabel}</span></li>
+      </ul>
+    </section>
   </AppShell>;
 }

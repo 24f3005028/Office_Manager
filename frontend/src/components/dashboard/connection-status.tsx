@@ -46,51 +46,48 @@ export function ConnectionStatus({
   error,
   onRetry,
 }: ConnectionStatusProps) {
-  const copy = connectionCopy(status);
   const apiDown = !healthAvailable && Boolean(error);
+  const copy = apiDown
+    ? { label: "Unavailable", detail: "Office dashboard is not connected", tone: "danger" }
+    : connectionCopy(status);
+  const note = apiDown
+    ? "Open the Office desktop shortcut, then try again."
+    : copy.tone !== "success" && status?.message !== copy.detail ? status?.message : null;
 
   return (
     <section className="connection-card panel" aria-labelledby="connection-heading">
-      <div className="section-heading compact-heading">
-        <div>
-          <p className="eyebrow">Connection</p>
+      <div className="connection-overview">
+        <div className="connection-heading">
           <h2 id="connection-heading">WhatsApp connection</h2>
+          <span className={`status-pill ${copy.tone}`} role="status">
+            <span className="status-dot" aria-hidden="true" />
+            {copy.label}
+          </span>
         </div>
-        <span className={`status-pill ${copy.tone}`}>
-          <span className="status-dot" />
-          {copy.label}
-        </span>
+        <p className="connection-detail">{copy.detail}</p>
       </div>
+      <button className="button button-quiet" type="button" onClick={onRetry}>
+        <span aria-hidden="true">↻</span> Refresh status
+      </button>
 
-      <div className="connection-body">
-        <div className="connection-summary">
-          <p className="connection-detail">{apiDown ? "Office dashboard is not connected" : copy.detail}</p>
-          <p className="muted-text">
-             {apiDown ? "Open the Office desktop shortcut, then try again." : (status?.connected || status?.status === "ready" ? "" : status?.message)}
-          </p>
-          <button className="button button-quiet" type="button" onClick={onRetry}>
-            <span aria-hidden="true">↻</span> Refresh status
-          </button>
-        </div>
-
-        {(qrUrl || qrLoading) && (
-          <div className="qr-panel">
-            {qrUrl ? (
-              // The bridge serves a local SVG/data URL; it is deliberately not optimized remotely.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img className="qr-image" src={qrUrl} alt="WhatsApp pairing QR code" />
-            ) : (
-              <div className="qr-placeholder" aria-label="Loading QR code">
-                <span className="spinner" />
-              </div>
-            )}
-            <div>
-              <strong>Scan to connect</strong>
-              <p className="muted-text">Open WhatsApp → Linked devices → Link a device.</p>
+      {note && <p className="connection-note muted-text">{note}</p>}
+      {!apiDown && (qrUrl || qrLoading) && (
+        <div className="qr-panel">
+          {qrUrl ? (
+            // The bridge serves a local SVG/data URL; it is deliberately not optimized remotely.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className="qr-image" src={qrUrl} alt="WhatsApp pairing QR code" />
+          ) : (
+            <div className="qr-placeholder" role="status" aria-label="Loading QR code">
+              <span className="spinner dark" />
             </div>
+          )}
+          <div>
+            <strong>Scan to connect</strong>
+            <p className="muted-text">Open WhatsApp → Linked devices → Link a device.</p>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {error && <p className="inline-error">{error}</p>}
     </section>
