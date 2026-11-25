@@ -5,10 +5,41 @@ from urllib.parse import parse_qs, urlsplit
 from app.config import Settings
 from app.main import create_app
 from app.mobile_main import create_mobile_app
-from app.office_google import OfficeGoogle
+from app.office_google import GOOGLE_CLOCK_SKEW_SECONDS, OfficeGoogle, id_token
 from fastapi.testclient import TestClient
+from httpx import Request, Response
 
 from tests.fakes import FakeBridge
+
+
+def test_google_verification_allows_small_clock_offset(tmp_path, monkeypatch):
+    settings = Settings(
+        database_path=tmp_path / "office.sqlite3",
+        google_oauth_client_id="test-client",
+        google_oauth_client_secret="test-secret",
+        google_oauth_owner_email="office@gmail.com",
+    )
+    app = create_app(settings, FakeBridge(), start_worker=False)
+    token_url = "https://oauth2.googleapis.com/token"
+    monkeypatch.setattr(
+        "app.office_google.httpx.post",
+        lambda *args, **kwargs: Response(
+            200, json={"id_token": "test-token"}, request=Request("POST", token_url)
+        ),
+    )
+
+    def verify(token, request, audience, *, clock_skew_in_seconds):
+        assert token == "test-token"
+        assert audience == "test-client"
+        assert clock_skew_in_seconds == GOOGLE_CLOCK_SKEW_SECONDS
+        assert clock_skew_in_seconds > 0
+        return {"sub": "office-sub"}
+
+    monkeypatch.setattr(id_token, "verify_oauth2_token", verify)
+    with TestClient(app):
+        assert app.state.office_google.google_claims("dashboard", "code", "verifier") == {
+            "sub": "office-sub"
+        }
 
 
 def test_google_grants_gate_both_apps_and_revoke_sessions(tmp_path, monkeypatch):

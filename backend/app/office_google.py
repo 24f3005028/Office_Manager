@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import secrets
 import sqlite3
 import time
@@ -33,7 +34,9 @@ DASHBOARD_CALLBACK = "http://127.0.0.1:8000/api/auth/google/callback"
 DASHBOARD_ORIGIN = "http://127.0.0.1:3000"
 FLOW_SECONDS = 600
 DASHBOARD_SECONDS = 8 * 60 * 60
+GOOGLE_CLOCK_SKEW_SECONDS = 30
 TOKEN = r"^[A-Za-z0-9_-]{32,100}$"
+logger = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS office_google_grants (
@@ -181,7 +184,10 @@ class OfficeGoogle:
         )
         response.raise_for_status()
         return id_token.verify_oauth2_token(
-            response.json()["id_token"], GoogleRequest(), self.client_id
+            response.json()["id_token"],
+            GoogleRequest(),
+            self.client_id,
+            clock_skew_in_seconds=GOOGLE_CLOCK_SKEW_SECONDS,
         )
 
     def finish(self, channel: Channel, code: str, state: str) -> tuple[str, str]:
@@ -203,6 +209,16 @@ class OfficeGoogle:
         try:
             claims = self.google_claims(channel, code, flow["verifier"])
         except (httpx.HTTPError, GoogleAuthError, ValueError, KeyError) as exc:
+            if isinstance(exc, httpx.HTTPStatusError):
+                logger.warning(
+                    "Google %s sign-in token exchange returned HTTP %s",
+                    channel,
+                    exc.response.status_code,
+                )
+            else:
+                logger.warning(
+                    "Google %s sign-in verification failed (%s)", channel, type(exc).__name__
+                )
             raise HTTPException(401, "Google could not verify this sign-in.") from exc
         email = claims.get("email", "")
         subject = claims.get("sub", "")
@@ -432,7 +448,7 @@ def google_router(channel: Channel) -> APIRouter:
 
     @router.get("/google/callback", response_model=None)
     def callback(
-        request: Request, state: str = "", code: str = ""
+        request: Request, state: str = "", code: str = "", error: str = ""
     ) -> HTMLResponse | RedirectResponse:
         expected = request.cookies.get(STATE_COOKIE, "")
         status = "cancelled"
@@ -441,7 +457,11 @@ def google_router(channel: Channel) -> APIRouter:
             try:
                 token, flow = office_google(request).finish(channel, code, state)
             except HTTPException as exc:
-                status = "denied" if exc.status_code == 403 else "failed"
+                status = {400: "expired", 403: "denied"}.get(exc.status_code, "failed")
+        elif code and state:
+            status = "expired"
+        elif error and error != "access_denied":
+            status = "failed"
         if channel == "mobile":
             query = urlencode({"flow": flow, "code": token} if token else {"error": status})
             location = escape("hstraders-office://google-sign-in?" + query, quote=True)
