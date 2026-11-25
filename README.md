@@ -3,7 +3,7 @@
 Local Windows dashboard for finding bills, credit notes and debit notes by their printed
 accounting date and sending PDFs sequentially to a saved WhatsApp contact.
 
-## One-click startup
+## Start and stop Office Dashboard
 
 Double-click **Office WhatsApp Sender** on the desktop, or run **Start-Office.cmd** here.
 It starts the WhatsApp bridge, FastAPI backend and production frontend in the background,
@@ -17,9 +17,9 @@ The saved WhatsApp session restores automatically; use setup only if linking is 
 - Startup failures stay visible in the launcher console and show the relevant log location.
 - The backend and frontend use ports 8000 and 3000 on loopback. The bridge port is read from
   its .env (3001 by default). API URLs and API keys must agree; preflight checks this.
-- Services stay running after the launcher closes. Close them before shutting down or restarting
-  their processes; wait for sends to finish first. This is a local interactive app, not a service
-  installed to start automatically with Windows.
+- Double-click **Stop Office Dashboard** on the desktop or run **Stop-Office.cmd** to stop
+  the frontend, backend, WhatsApp bridge, mobile gateway and Cloudflare tunnel.
+  Wait for sends and BUSY operations to finish before stopping.
 
 Optional PowerShell commands from the repository root:
 
@@ -28,7 +28,7 @@ Optional PowerShell commands from the repository root:
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Start-Office.ps1 -CheckOnly
 # Start without opening a browser
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Start-Office.ps1 -NoBrowser
-# Recreate the desktop shortcut after moving the repository
+# Recreate both desktop shortcuts after moving the repository
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Install-DesktopShortcut.ps1
 ```
 
