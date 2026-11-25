@@ -25,6 +25,34 @@ class BusyExporter:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
+    def _main(self, financial_year: str | None = None) -> tuple[Any, Any]:
+        if sys.platform != "win32":
+            raise SyncError("An unlocked Windows desktop is required for BUSY reports.")
+        desktop = importlib.import_module("pywinauto").Desktop(backend="uia")
+        company_name = self.settings.pouncha_company
+        company_key = normalize(company_name)
+        company_found = False
+        for window in desktop.windows(title_re=r"(?i)^Busy\s+21\s+Rel\b.*", visible_only=False):
+            title = window.window_text()
+            company = re.search(r"\|\s*([^|]+?)\s*\(F\.Y\.", title, re.I)
+            if company is None or normalize(company[1]) != company_key:
+                continue
+            visible = window.is_visible()
+            minimized = not visible and window.is_minimized()
+            if not visible and not minimized:
+                continue
+            company_found = True
+            if financial_year is not None:
+                year = re.match(r"\s*(\d{4})-(\d{2})\b", title[company.end():])
+                if year is None or f"{year[1][-2:]}-{year[2]}" != financial_year:
+                    continue
+            if minimized:
+                window.restore()
+            return window, desktop
+        if company_found:
+            raise SyncError(f"Open {company_name} in BUSY financial year {financial_year}.")
+        raise SyncError(f"Log into {company_name} in BUSY 21 before requesting this report.")
+
     @staticmethod
     def _visible(root: Any, kind: str) -> list[Any]:
         bounds = root.rectangle()
@@ -220,17 +248,7 @@ class BusyExporter:
         if not date(year, 4, 1) <= start <= end <= date(year + 1, 3, 31):
             raise SyncError(f"Select dates within BUSY's configured financial year {fy}.")
         try:
-            desktop = importlib.import_module("pywinauto").Desktop(backend="uia")
-            candidates = desktop.windows(title_re=r"(?i)^Busy\s+21\s+Rel\b.*", visible_only=True)
-            if len(candidates) != 1:
-                raise SyncError("Open one BUSY 21 window and log into H.S. TRADERS before syncing.")
-            main = candidates[0]
-            title = main.window_text()
-            company = re.search(r"\|\s*([^|]+?)\s*\(F\.Y\.", title, re.I)
-            if company is None or normalize(company[1]) != normalize(self.settings.pouncha_company):
-                raise SyncError("The BUSY window is not logged into the configured company.")
-            if f"{year}-{str(year + 1)[-2:]}" not in title:
-                raise SyncError("The BUSY financial year does not match the configured year.")
+            main, desktop = self._main(fy)
             target, edits = self._open_ledger(main, desktop)
             values = [
                 "STANDARD",

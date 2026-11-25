@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import importlib
 import re
-import sys
 import time
 from datetime import date
 from decimal import Decimal
@@ -13,7 +11,7 @@ from typing import Any
 
 import pymupdf
 
-from app.domains.pouncha_sync.busy import BusyExporter, normalize
+from app.domains.pouncha_sync.busy import BusyExporter
 from app.domains.pouncha_sync.parser import SyncError
 
 REPORT_START = date(2025, 1, 16)
@@ -104,16 +102,7 @@ class OutstandingExporter(BusyExporter):
         raise SyncError("BUSY did not reach the expected report screen. No fields were guessed.")
 
     def export_report(self, party: str, as_of: date, directory: Path) -> Path:
-        if sys.platform != "win32":
-            raise SyncError("An unlocked Windows desktop is required for BUSY reports.")
-        desktop = importlib.import_module("pywinauto").Desktop(backend="uia")
-        candidates = desktop.windows(title_re=r"(?i)^Busy\s+21\s+Rel\b.*", visible_only=True)
-        if len(candidates) != 1:
-            raise SyncError("Open one BUSY 21 company window before requesting a fresh report.")
-        main = candidates[0]
-        company = re.search(r"\|\s*([^|]+?)\s*\(F\.Y\.", main.window_text(), re.I)
-        if company is None or normalize(company[1]) != normalize(self.settings.pouncha_company):
-            raise SyncError("BUSY must be logged into H.S. TRADERS.")
+        main, desktop = self._main()
         target = self._open_outstanding(main, desktop)
         edits = self._edits(target)
         # Group the two columns; screen scaling affects coordinates, not relative order.

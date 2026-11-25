@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import importlib
 import re
-import sys
 import time
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -279,16 +277,7 @@ def verify_all_pdf(path: Path, snapshot: dict[str, Any], as_of: date) -> dict[st
 
 class AllAccountsExporter(OutstandingExporter):
     def export_all(self, as_of: date, directory: Path) -> tuple[Path, dict[str, Any]]:
-        if sys.platform != "win32":
-            raise SyncError("An unlocked Windows desktop is required for BUSY reports.")
-        desktop = importlib.import_module("pywinauto").Desktop(backend="uia")
-        windows = desktop.windows(title_re=r"(?i)^Busy\s+21\s+Rel\b.*", visible_only=True)
-        if len(windows) != 1:
-            raise SyncError("Open one BUSY 21 company window before requesting this report.")
-        main = windows[0]
-        company = re.search(r"\|\s*([^|]+?)\s*\(F\.Y\.", main.window_text(), re.I)
-        if company is None or normalize(company[1]) != normalize(self.settings.pouncha_company):
-            raise SyncError("BUSY must be logged into H.S. TRADERS.")
+        main, desktop = self._main()
         if not self._home(main, desktop):
             raise SyncError("BUSY did not reach its company homepage safely.")
         self._guard(main, desktop)[0].type_keys("%f", pause=0.2)

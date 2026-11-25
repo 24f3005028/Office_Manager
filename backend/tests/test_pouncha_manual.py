@@ -5,11 +5,14 @@ from __future__ import annotations
 import io
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from app.config import Settings
 from app.db import Database
+from app.domains.pouncha_sync import busy
 from app.domains.pouncha_sync.busy import FLAGS, BusyExporter
 from app.domains.pouncha_sync.parser import Sale, SyncError, bill_key, parse_sales
 from app.domains.pouncha_sync.repository import RunRepository
@@ -23,6 +26,55 @@ from tests.fakes import FakeBridge
 
 START = date(2026, 11, 1)
 END = date(2026, 11, 5)
+
+
+@pytest.mark.parametrize(
+    ("companies", "year", "selected", "error"),
+    [
+        (["Other Traders (F.Y. 2026-27)", "HS Traders (F.Y. 2026-27)"], None, 1, None),
+        (
+            ["H.S. TRADERS (F.Y. 2025-26)", "H.S. TRADERS (F.Y. 2026-27)"],
+            "26-27",
+            1,
+            None,
+        ),
+        (["H.S. Traders Wholesale (F.Y. 2026-27)", "Select Company"], None, None, "Log into"),
+        (["H.S. TRADERS (F.Y. 2025-26)"], "26-27", None, "financial year 26-27"),
+        ([], None, None, "Log into"),
+    ],
+)
+def test_busy_selects_company_window(
+    companies: list[str],
+    year: str | None,
+    selected: int | None,
+    error: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    windows = []
+    for company in companies:
+        window = Mock()
+        window.window_text.return_value = f"Busy 21 Rel 14.2 | {company}"
+        window.is_visible.return_value = True
+        window.is_minimized.return_value = False
+        windows.append(window)
+    desktop = Mock()
+    desktop.windows.return_value = windows
+    busy_module = SimpleNamespace(Desktop=lambda **_: desktop)
+    monkeypatch.setattr(busy, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(busy, "importlib", SimpleNamespace(import_module=lambda _: busy_module))
+    exporter = BusyExporter(Settings(_env_file=None))
+
+    if selected is None:
+        with pytest.raises(SyncError, match=error):
+            exporter._main(year)
+    else:
+        selected_window = windows[selected]
+        assert exporter._main(year) == (selected_window, desktop)
+        selected_window.restore.assert_not_called()
+        selected_window.is_visible.return_value = False
+        selected_window.is_minimized.return_value = True
+        assert exporter._main(year) == (selected_window, desktop)
+        selected_window.restore.assert_called_once_with()
 
 
 def export_bytes(
@@ -607,8 +659,6 @@ def test_unsaved_prompt_still_prevents_escapes_and_alt_l(monkeypatch: pytest.Mon
 
 
 def test_offscreen_vb6_helper_controls_are_excluded() -> None:
-    from types import SimpleNamespace
-
     class Control:
         def __init__(self, left: int, top: int) -> None:
             self.left, self.top = left, top

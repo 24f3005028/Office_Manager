@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import importlib
 import re
-import sys
 import time
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -252,19 +250,6 @@ def parse_group_balances(path: Path, group: str, as_of: date) -> dict[str, Any]:
 
 
 class AccountReportExporter(OutstandingExporter):
-    def _main(self) -> tuple[Any, Any]:
-        if sys.platform != "win32":
-            raise SyncError("An unlocked Windows desktop is required for account reports.")
-        desktop = importlib.import_module("pywinauto").Desktop(backend="uia")
-        windows = desktop.windows(title_re=r"(?i)^Busy\s+21\s+Rel\b.*", visible_only=True)
-        if len(windows) != 1:
-            raise SyncError("Open one BUSY 21 company window before requesting an account report.")
-        main = windows[0]
-        company = re.search(r"\|\s*([^|]+?)\s*\(F\.Y\.", main.window_text(), re.I)
-        if company is None or normalize(company[1]) != normalize(self.settings.pouncha_company):
-            raise SyncError("BUSY must be logged into H.S. TRADERS.")
-        return main, desktop
-
     def _excel(self, main: Any, desktop: Any, target: Any, filename: Path) -> None:
         target.type_keys("%e", pause=0.2)
         dialog = self._wait(
@@ -347,13 +332,8 @@ class GroupBalancesExporter(AccountReportExporter):
             raise SyncError("BUSY did not retain the group closing-balance settings.")
 
     def export_group(self, group: str, as_of: date, directory: Path) -> tuple[Path, dict[str, Any]]:
-        main, desktop = self._main()
         fy, _, _ = financial_year(india_today())
-        title_year = re.search(r"F\.Y\.\s*(\d{4})-(\d{2})", main.window_text(), re.I)
-        if title_year is None or f"{int(title_year[1]) % 100:02d}-{title_year[2]}" != fy:
-            raise SyncError(
-                f"Open BUSY in the current financial year {fy} for group closing balances."
-            )
+        main, desktop = self._main(fy)
         if not self._home(main, desktop):
             raise SyncError("BUSY did not reach its homepage safely.")
         self._guard(main, desktop)[0].type_keys("%f", pause=0.2)
